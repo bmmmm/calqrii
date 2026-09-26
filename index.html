@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- GitHub Pages cannot send HTTP headers, so the policy lives here. Note that
+     frame-ancestors, sandbox and report-uri are ignored in a meta CSP. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Calendar events as offline QR codes, generated in your browser. Scan with a phone camera to add the event to its calendar. Nothing is stored or sent anywhere.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<title>calqrii — calendar events as offline QR codes</title>
+</head>
+<body>
+<header>
+  <h1>calqrii</h1>
+  <p data-i18n="tagline">Calendar events as QR codes — generated in your browser, nothing leaves it. Scan with a phone camera to add the event to its calendar.</p>
+  <nav id="lang-nav" aria-label="Language">
+    <button type="button" id="lang-en" class="lang" aria-pressed="true">EN</button>
+    <button type="button" id="lang-de" class="lang" aria-pressed="false">DE</button>
+  </nav>
+</header>
+
+<main>
+  <div id="banner" role="status" hidden></div>
+
+  <section id="calendar-section" aria-labelledby="calendar-head">
+    <h2 id="calendar-head" class="visually-hidden" data-i18n="calendar_label">Month view</h2>
+    <div id="calendar"></div>
+    <p class="sel-row"><span id="sel-info"></span> <button type="button" id="clear-sel" class="link" data-i18n="clear_sel" hidden>Clear selection</button></p>
+  </section>
+
+  <form id="editor" autocomplete="off" novalidate>
+    <h2 data-i18n="editor_head">Event</h2>
+    <!-- No maxlength: limits are enforced by model.js and shown as errors. -->
+    <label for="f-title"><span data-i18n="f_title">Title</span> <small aria-hidden="true">*</small></label>
+    <input id="f-title" name="title" required>
+
+    <label class="check"><input type="checkbox" id="f-allday" name="allday"> <span data-i18n="f_allday">All day</span></label>
+
+    <fieldset id="days-mode" hidden>
+      <legend data-i18n="mode_legend">Several days selected</legend>
+      <label class="check"><input type="radio" name="days-mode" value="each" checked> <span data-i18n="mode_each">One event on each selected day</span></label>
+      <label class="check"><input type="radio" name="days-mode" value="span"> <span data-i18n="mode_span">One event from the first to the last day</span></label>
+    </fieldset>
+
+    <div class="row">
+      <label for="f-date" data-i18n="f_from">From</label>
+      <div class="fields">
+        <input type="date" id="f-date" name="date">
+        <input type="time" id="f-start" name="start" class="time" step="60">
+      </div>
+    </div>
+    <div class="row">
+      <label for="f-end-date" data-i18n="f_to">To</label>
+      <div class="fields">
+        <input type="date" id="f-end-date" name="end-date">
+        <input type="time" id="f-end" name="end" class="time" step="60">
+      </div>
+    </div>
+
+    <label for="f-freq" data-i18n="f_repeat">Repeat</label>
+    <select id="f-freq" name="freq">
+      <option value="none" data-i18n="rep_none">Never</option>
+      <option value="daily" data-i18n="rep_daily">Daily</option>
+      <option value="weekly" data-i18n="rep_weekly">Weekly</option>
+      <option value="monthly" data-i18n="rep_monthly">Monthly</option>
+      <option value="yearly" data-i18n="rep_yearly">Yearly</option>
+    </select>
+
+    <div id="rep-opts" hidden>
+      <div class="row">
+        <label for="f-interval" data-i18n="f_interval">Every</label>
+        <div class="fields">
+          <input type="number" id="f-interval" name="interval" min="1" max="99" value="1" inputmode="numeric" class="num">
+          <span id="f-interval-unit"></span>
+        </div>
+      </div>
+      <fieldset id="f-byday" hidden>
+        <legend data-i18n="f_byday">On</legend>
+        <label class="check day"><input type="checkbox" name="byday" value="MO"> <span data-wd="0">Mon</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="TU"> <span data-wd="1">Tue</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="WE"> <span data-wd="2">Wed</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="TH"> <span data-wd="3">Thu</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="FR"> <span data-wd="4">Fri</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="SA"> <span data-wd="5">Sat</span></label>
+        <label class="check day"><input type="checkbox" name="byday" value="SU"> <span data-wd="6">Sun</span></label>
+      </fieldset>
+      <fieldset id="f-ends">
+        <legend data-i18n="f_ends">Ends</legend>
+        <label class="check"><input type="radio" name="f-ends" value="never" checked> <span data-i18n="end_never">never</span></label>
+        <label class="check"><input type="radio" name="f-ends" value="count"> <span data-i18n="end_count">after</span> <input type="number" id="f-count" name="count" min="1" max="999" value="10" inputmode="numeric" class="num"> <span data-i18n="end_count_unit">times</span></label>
+        <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until"></label>
+      </fieldset>
+      <p class="note" id="rep-note" data-i18n="rep_floating_note"></p>
+      <p class="note" id="rep-day-note" data-i18n="rep_day_note" hidden></p>
+    </div>
+
+    <label for="f-location" data-i18n="f_location">Location</label>
+    <input id="f-location" name="location">
+    <label for="f-desc" data-i18n="f_description">Description</label>
+    <textarea id="f-desc" name="description" rows="3"></textarea>
+    <label for="f-url" data-i18n="f_url">Link</label>
+    <input id="f-url" name="url" type="url" inputmode="url" spellcheck="false">
+
+    <p id="form-error" role="alert" hidden></p>
+    <div class="actions">
+      <button type="submit" id="save" class="primary">Add event</button>
+      <button type="button" id="cancel-edit" data-i18n="cancel" hidden>Cancel</button>
+    </div>
+  </form>
+
+  <section id="events" aria-labelledby="events-head">
+    <h2 id="events-head" data-i18n="events_head">Events</h2>
+    <p id="empty-list" class="note" data-i18n="empty_list">No events yet.</p>
+    <ol id="event-list"></ol>
+    <label class="check"><input type="checkbox" id="combined-toggle" disabled> <span data-i18n="combined_label">Experimental: all events in one QR code</span></label>
+    <div id="combined-panel" hidden>
+      <p class="note warn" data-i18n="combined_note"></p>
+      <div class="qr-panel" data-qr-panel></div>
+    </div>
+    <div class="actions">
+      <button type="button" id="copy-link" class="primary" data-i18n="copy_link" disabled>Copy link</button>
+    </div>
+    <p id="link-info" class="note"></p>
+    <p id="tz-info" class="note"></p>
+  </section>
+</main>
+
+<footer>
+  <p data-i18n="privacy"></p>
+  <p><a href="https://github.com/bmmmm/calqrii" data-i18n="source">Source (GPL-3.0-or-later)</a></p>
+</footer>
+
+<template id="tpl-event">
+  <li>
+    <article class="event">
+      <h3 class="ev-title"></h3>
+      <p class="ev-when"></p>
+      <p class="ev-rec"></p>
+      <p class="ev-where"></p>
+      <div class="qr-panel" data-qr-panel></div>
+      <div class="ev-actions">
+        <button type="button" data-ev="edit"></button>
+        <button type="button" data-ev="duplicate"></button>
+        <button type="button" data-ev="delete"></button>
+      </div>
+    </article>
+  </li>
+</template>
+<template id="tpl-qr">
+  <div class="qr"></div>
+  <p class="qr-meta"></p>
+  <p class="qr-warn note warn" hidden></p>
+  <p class="qr-error" hidden></p>
+  <div class="qr-actions">
+    <button type="button" data-act="svg"></button>
+    <button type="button" data-act="png"></button>
+    <button type="button" data-act="ics"></button>
+  </div>
+  <details><summary class="show-ics"></summary><pre class="ics"></pre></details>
+</template>
+
+<script src="qrcodegen.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

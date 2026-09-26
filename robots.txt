@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bmmmm.github.io/calqrii/sitemap.xml

@@ -1,0 +1,59 @@
+name: pages
+
+# Tests + smoke gate, then the static site to GitHub Pages. No build step:
+# the shipped files are copied as they are. Pull requests run the gates only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# Never abort a running deployment: a cancelled deploy-pages can leave the
+# site in a failed state until the next run finishes.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Runs repo code (tests, smoke gate), so it gets read access only;
+    # the deploy job alone holds the Pages/OIDC rights.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tests and smoke gate
+        run: |
+          node --version
+          for t in test/*.test.mjs; do node "$t" || exit 1; done
+          node scripts/web-smoke.mjs
+      - name: Assemble site
+        run: |
+          mkdir _site
+          cp index.html style.css app.js calendar.js ics.js model.js fragment.js qr.js i18n.js qrcodegen.js favicon.ico 404.html robots.txt sitemap.xml LICENSE NOTICE _site/
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name != 'pull_request'
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
