@@ -4,15 +4,22 @@ Calendar events as offline QR codes — a static page (German/English) that
 runs entirely in your browser.
 
 Pick days in a month grid, describe an event (single, multi-day, or a
-recurring series), and get one QR code per event. The QR contains a complete
-iCalendar (`VCALENDAR`/`VEVENT`) payload, so a phone camera recognizes it as
-a calendar entry and offers "Add to calendar" — no server, no app, nothing
-to download. (The optional share link only carries your events back to this
-page.)
+recurring series), and get one QR code per event. Each code carries one of
+two payloads, chosen above the event list:
 
-An experimental option puts all events into a single QR. Scanner libraries
-such as ZXing read only the first event from such a code, and phone cameras
-are untested, so it is marked as such.
+- **Calendar data** (default): the complete iCalendar (`VCALENDAR`/`VEVENT`)
+  payload. A phone camera recognizes it as a calendar entry and offers "Add
+  to calendar" — no server, no app, nothing to download, works offline.
+- **Link to this page**: this page's URL with the event in its `#fragment`.
+  Every camera app opens a URL; the scanning phone must be able to reach the
+  page wherever it is hosted. It opens a read-only view of the event with
+  "Add to calendar" (an `.ics` file), "Show QR" (the offline code, to pass
+  on) and "Edit these events". A copied share link opens the same view.
+
+An option puts all events into a single code. As calendar data it is
+experimental: scanner libraries such as ZXing read only the first event from
+such a code, and phone cameras are untested. As a link it carries every event
+(up to the 2 953-byte limit, about eight typical events).
 
 ## Privacy
 
@@ -21,6 +28,13 @@ local storage. The only way to keep your events is the share link, which
 carries them in the URL `#fragment` (browsers never send fragments in
 requests). It is still an ordinary URL: in your history, and in clear text
 wherever you paste it.
+
+A link QR code is such a share link. The page that generates it sends
+nothing; the phone that scans it requests this page from its host (for the
+public copy, GitHub Pages sees an ordinary page request and the IP address,
+never the events, which stay in the fragment and are decoded on the phone).
+In the view the tab title — and so the history entry — shows the first
+event's title.
 
 ## Date rules
 
@@ -39,9 +53,9 @@ back byte for byte with `BarcodeDetector`. That run is not part of the test
 suite. What a phone's camera app does with the calendar payload is a device
 question and is recorded here as it gets tested:
 
-| Device / OS | Scanner | Single event | All-day | Series (RRULE) | Combined QR | Result |
-|---|---|---|---|---|---|---|
-| — | — | not yet tested | — | — | — | — |
+| Device / OS | Scanner | Single event | All-day | Series (RRULE) | Combined QR | Link QR → view | View: Add to calendar | Result |
+|---|---|---|---|---|---|---|---|---|
+| — | — | not yet tested | — | — | — | — | — | — |
 
 ## Development
 

@@ -1,7 +1,8 @@
 # calqrii — agent instructions
 
 Static page that turns calendar events into offline QR codes (iCalendar
-payload, scanned straight into the phone's calendar). No build, no framework,
+payload, scanned straight into the phone's calendar) or into link codes that
+open a read-only view of the events on this page. No build, no framework,
 no runtime dependency; the only state that leaves the page is a `#fragment`
 share link.
 
@@ -18,17 +19,21 @@ and the test script.
 
 ## Map
 
-- `index.html` · `style.css` · `app.js` (UI, ES module) — the page.
+- `index.html` · `style.css` · `app.js` (UI, ES module: editor screen and
+  the read-only view for opened links) — the page.
 - `calendar.js` — month grid (`monthGrid`, `renderMonth`), DOM via `createElement` only.
-- `model.js` — event model, normalization, validation, `expandDraft`.
+- `model.js` — event model, normalization, validation, `expandDraft`; pure
+  helpers behind the duration select and the repeat presets.
 - `ics.js` — RFC 5545 serializer: escaping, 75-octet folding, UTC/floating
   dates, RRULE, content-hashed UID.
-- `fragment.js` — share-link codec `#v=1&tz=…&e=<base64url(JSON)>`.
+- `fragment.js` — share-link codec `#v=1&tz=…&e=<base64url(JSON)>`; `linkFor`
+  builds a share link or a link-mode QR text from a page base.
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
 - `i18n.js` — `STR.en` / `STR.de`, key parity pinned by test.
 - `qrcodegen.js` — Project Nayuki, vendored verbatim (sha256 in `NOTICE`).
 - `test/*.test.mjs` — plain `node` + `node:assert/strict`; `test/helpers/load-qrcodegen.mjs`
-  evaluates the classic script into `globalThis`.
+  evaluates the classic script into `globalThis`; `test/page.test.mjs` pins
+  the option lists in `index.html` against the model's constants.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
   shipped files; `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 
@@ -48,6 +53,12 @@ Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
 - **Zero storage.** Never add storage APIs, network calls, writes to the
   address bar/history, HTML string sinks or external resources — the smoke
   gate greps for them and the meta CSP pins the rest.
+- The smoke gate's §7 reads whole function bodies (`bodyOf` skips the
+  parameter list) and demands an anchor per gated function; keep `.value`
+  (also Intl's `formatToParts().value`), `$(` and `readEditor` out of
+  `pageBase`, `shareURL`, `eventLink`, `renderQrPanel`, `renderList`,
+  `renderCombined` and `renderView`. Every i18n key named by `index.html` or
+  `app.js` must exist in `STR.en` (§9).
 - In JS literals `'\;'` is just `;`. Escaping code and fixtures need the
   backslash doubled (`'\\;'`) or `String.raw`.
 - The VEVENT property order feeds the UID hash; reordering changes every UID.
