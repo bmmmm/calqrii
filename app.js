@@ -153,6 +153,7 @@ function fillEditor(ev) {
   els.url.value = ev.url;
   els.geo.value = ev.geo;
   syncOsmSearch();
+  state.geoAbort?.abort(); // a reply for the previous form must not land under this one
   clearGeoResults();
   const r = ev.recurrence;
   els.freq.value = recurrencePreset(r, ev.date);
