@@ -5,11 +5,11 @@
 <!-- GitHub Pages cannot send HTTP headers, so the policy lives here. Note that
      frame-ancestors, sandbox and report-uri are ignored in a meta CSP. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://nominatim.openstreetmap.org; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Calendar events as offline QR codes, generated in your browser. Scan with a phone camera to add the event to its calendar. Nothing is stored or sent anywhere.">
+<meta name="description" content="Calendar events as offline QR codes, generated in your browser. Scan with a phone camera to add the event to its calendar. Nothing is stored, and nothing is sent unless you use the optional OpenStreetMap address search.">
 <link rel="icon" href="favicon.ico">
 <link rel="stylesheet" href="style.css">
 <title>calqrii — calendar events as offline QR codes</title>
@@ -17,7 +17,7 @@
 <body>
 <header>
   <h1>calqrii</h1>
-  <p data-i18n="tagline">Calendar events as QR codes — generated in your browser, nothing leaves it. Scan with a phone camera to add the event to its calendar.</p>
+  <p data-i18n="tagline">Calendar events as QR codes — generated in your browser; nothing leaves it unless you use the optional OpenStreetMap address search. Scan with a phone camera to add the event to its calendar.</p>
   <nav id="lang-nav" aria-label="Language">
     <button type="button" id="lang-en" class="lang" aria-pressed="true">EN</button>
     <button type="button" id="lang-de" class="lang" aria-pressed="false">DE</button>
@@ -150,7 +150,13 @@
     <label for="f-location" data-i18n="f_location">Location</label>
     <input id="f-location" name="location">
     <div class="field-links">
+      <!-- The only network action of the page: asks for consent on the first click of a visit, never searches while typing. -->
+      <button type="button" id="geo-search" data-i18n="geo_search">Search address (OpenStreetMap)</button>
       <a id="osm-search" href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer" data-i18n="osm_search">Search on OpenStreetMap</a>
+    </div>
+    <div id="geo-results" hidden>
+      <ul id="geo-list" data-i18n-aria="geo_results_label"></ul>
+      <p class="note"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" data-i18n="geo_attrib">Search data © OpenStreetMap contributors (ODbL)</a></p>
     </div>
     <!-- Plain text on purpose: inputmode="decimal" has no minus, comma or letters on iOS, so links and "lat, lon" could not be typed. -->
     <label for="f-geo" data-i18n="f_geo">Map position</label>

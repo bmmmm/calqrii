@@ -168,6 +168,8 @@ legend { font-size: 0.9rem; padding: 0; margin-bottom: 2px; }
 .field-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 0.9rem; }
 .field-links a, .where-map { color: var(--accent); }
 .where-map { margin-left: 4px; }
+#geo-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; }
+#geo-list button { text-align: left; }
 
 button {
   padding: 8px 14px;

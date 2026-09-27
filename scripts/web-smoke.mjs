@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Gate over the shipped page: the zero-storage contract (no storage, no
-// network, no address-bar writes, no HTML string sinks, no external
-// resources), the meta CSP pinned directive by directive, no inline script
+// network outside geocode.js — one origin, click-only, after consent —, no
+// address-bar writes, no HTML string sinks, no external resources), the meta
+// CSP pinned directive by directive, no inline script
 // or handlers, every referenced asset relative and present, the module graph
 // closed over SHIPPED, pages.yml shipping every file, the share link and the
 // QR panel derived from state only, the serializer importable, and every
@@ -13,8 +14,11 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const SHIPPED = ['index.html', 'style.css', 'app.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'qr.js', 'i18n.js', 'qrcodegen.js'];
+const SHIPPED = ['index.html', 'style.css', 'app.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'geocode.js', 'qr.js', 'i18n.js', 'qrcodegen.js'];
 const EXTRA_SHIPPED = ['favicon.ico', '404.html', 'robots.txt', 'sitemap.xml', 'LICENSE', 'NOTICE'];
+// The one module allowed to use the network, and the one origin it may name.
+const NETWORK_MODULE = 'geocode.js';
+const NOMINATIM_ORIGIN = 'https://nominatim.openstreetmap.org';
 
 let failures = 0;
 function fail(msg) { console.error('FAIL: ' + msg); failures++; }
@@ -27,7 +31,9 @@ const forbidden = [
   [/history\.(pushState|replaceState|go|back|forward)/, 'history write'],
   [/location\.(hash|href|search|pathname)\s*=(?!=)/, 'address bar write'],
   [/location\.(assign|replace|reload)\s*\(/, 'navigation call'],
-  [/\bimport\s*\(|\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/, 'network or dynamic import'],
+  [/\bimport\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/, 'network or dynamic import'],
+  // The bare identifier, not just a call: `const f = fetch` would dodge /fetch\(/. Only NETWORK_MODULE may name it.
+  [/\bfetch\b/, `fetch outside ${NETWORK_MODULE}`, (name) => name !== NETWORK_MODULE],
   [/\beval\s*\(|new\s+Function\s*\(/, 'code from strings'],
   [/innerHTML|outerHTML\s*=|insertAdjacentHTML|document\.write\s*\(|createContextualFragment/, 'HTML string sink'],
   [/<(script|link|img|iframe)[^>]+(src|href)=["']https?:/i, 'external resource tag'],
@@ -35,7 +41,7 @@ const forbidden = [
 ];
 for (const name of SHIPPED) {
   const src = read(name);
-  const hits = forbidden.filter(([re]) => re.test(src)).map(([, what]) => what);
+  const hits = forbidden.filter(([re, , applies = () => true]) => applies(name) && re.test(src)).map(([, what]) => what);
   if (hits.length) fail(`${name} violates the zero-storage contract: ${hits.join(', ')}`);
   else ok(`${name} names no storage, network, address-bar write, HTML sink or external resource`);
 }
@@ -61,7 +67,7 @@ const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
       ['script-src', "'self'"],
       ['style-src', "'self'"],
       ['img-src', "'self' data:"],
-      ['connect-src', "'self'"],
+      ['connect-src', `'self' ${NOMINATIM_ORIGIN}`],
       ['base-uri', "'none'"],
       ['form-action', "'none'"],
     ];
@@ -210,6 +216,39 @@ function bodyOf(src, fn) {
     const missing = [...names].filter((k) => !Object.hasOwn(STR.en, k));
     if (missing.length) fail(`i18n keys named by the page but missing from STR.en: ${missing.join(', ')}`);
     else ok(`all ${names.size} i18n keys named by index.html and app.js exist`);
+  }
+}
+
+// --- 10. the network: geocode.js only, one origin, called only from the address-search click after consent
+{
+  const geo = read(NETWORK_MODULE);
+  const origins = [...geo.matchAll(/https?:\/\/[^\s'"`)/]+/g)].map((m) => m[0]);
+  const foreign = origins.filter((o) => o !== NOMINATIM_ORIGIN);
+  if (origins.length === 0) fail(`${NETWORK_MODULE} names no URL -- its gate has nothing to check`);
+  else if (foreign.length) fail(`${NETWORK_MODULE} names ${foreign.join(', ')}; only ${NOMINATIM_ORIGIN} is allowed`);
+  else ok(`${NETWORK_MODULE} names only ${NOMINATIM_ORIGIN}`);
+  const fetchRefs = (geo.match(/\bfetch\b/g) || []).length;
+  if (fetchRefs !== 1 || !/function searchNominatim\([^)]*\bfetchImpl\s*=\s*fetch\b/.test(geo)) {
+    fail(`${NETWORK_MODULE}: fetch must appear exactly once, as searchNominatim's injectable default (found ${fetchRefs})`);
+  } else ok(`${NETWORK_MODULE} reaches the network only through searchNominatim`);
+  const leaks = SHIPPED.filter((n) => n.endsWith('.js') && n !== NETWORK_MODULE && read(n).includes('//nominatim.'));
+  if (leaks.length) fail(`only ${NETWORK_MODULE} may name the Nominatim URL: ${leaks.join(', ')}`);
+  else ok('no other shipped module names the Nominatim URL');
+
+  const app = read('app.js');
+  const body = bodyOf(app, 'onGeoSearch');
+  if (!body) {
+    fail('app.js: onGeoSearch() not found -- its gate has nothing to check');
+  } else {
+    const calls = (app.match(/\bsearchNominatim\s*\(/g) || []).length;
+    const call = body.search(/\bsearchNominatim\s*\(/);
+    const consent = body.indexOf('state.geoConsent');
+    const outside = app.replace(body, '');
+    const refs = (outside.match(/\bonGeoSearch\b/g) || []).length;
+    if (calls !== 1 || call === -1) fail('app.js: searchNominatim( must appear exactly once, inside onGeoSearch()');
+    else if (consent === -1 || consent > call) fail('app.js: onGeoSearch() must check state.geoConsent before searching');
+    else if (refs !== 1 || !/\.addEventListener\(\s*'click'\s*,\s*onGeoSearch\s*\)/.test(outside)) fail("app.js: onGeoSearch must be bound once, to 'click', and called from nowhere else");
+    else ok('app.js searches only from the address-search click, after consent');
   }
 }
 

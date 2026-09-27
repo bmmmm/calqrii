@@ -1,15 +1,17 @@
 // calqrii web app: month grid → editor → events → one QR per event; an opened
 // link lands in a read-only view of its events first.
 //
-// Zero-storage contract: this file never touches a storage API, the network,
-// the history or the address bar (scripts/web-smoke.mjs greps for that). The
-// only state that can leave the page is a share link the user asks for, and
-// it lives in the #fragment.
+// Zero-storage contract: this file never touches a storage API, the history
+// or the address bar, and uses the network only through geocode.js from the
+// address-search click after consent (scripts/web-smoke.mjs pins all of it).
+// The only state that can leave the page otherwise is a share link the user
+// asks for, and it lives in the #fragment.
 import { renderMonth } from './calendar.js';
 import { serializeEvent, serializeCalendar } from './ics.js';
 import { decodeFragment, linkFor } from './fragment.js';
 import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
+import { searchNominatim } from './geocode.js';
 import {
   expandDraft, normalizeEvent, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption,
   presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, LIMITS,
@@ -22,6 +24,7 @@ const LINK_LONG_CHARS = 8000;
 const MEMO_MAX = 200;
 const UNDO_MS = 5000;
 const MARK_SPAN_MAX_DAYS = 366;
+const GEO_MIN_GAP_MS = 1000; // Nominatim's usage policy: at most one request per second
 
 const $ = (id) => document.getElementById(id);
 
@@ -43,6 +46,8 @@ const state = {
   payload: 'ics', // 'ics' | 'link': what the QR codes carry
   screen: 'editor', // 'editor' | 'view': an opened link lands in the read-only view
   openQr: new Set(), // ids of view cards whose code is shown
+  geoConsent: false, // address search allowed for this page load; never stored
+  geoAbort: null,
   dirty: false,
   focus: null,
 };
@@ -53,6 +58,7 @@ let bannerTimer = 0;
 const qrMemo = new Map(); // QR text → qrSvg() result, or { error, bytes }
 const panelData = new WeakMap(); // [data-qr-panel] → { text, ics, stem }: what was rendered, for the download buttons
 const icsOpts = () => ({ now: SESSION_NOW, tz: state.tz });
+const geoMemo = new Map(); // lang + query → address results, for this page load only (the policy asks for a cache)
 
 // --- i18n
 
@@ -147,6 +153,7 @@ function fillEditor(ev) {
   els.url.value = ev.url;
   els.geo.value = ev.geo;
   syncOsmSearch();
+  clearGeoResults();
   const r = ev.recurrence;
   els.freq.value = recurrencePreset(r, ev.date);
   els.cfreq.value = r.freq === 'none' ? 'weekly' : r.freq;
@@ -166,12 +173,81 @@ function resetEditor() {
   els.interval.value = '1';
   els.count.value = '10';
   syncOsmSearch();
+  state.geoAbort?.abort();
+  clearGeoResults();
   showFormErrors([]);
 }
 
 /** The OpenStreetMap search link follows the Location field: a plain link, nothing is sent unless it is followed. */
 function syncOsmSearch() {
   els.osmSearch.href = osmSearchUrl(els.location.value);
+}
+
+// --- address search: the page's only network action, opt-in per page load
+
+function onGeoSearch() {
+  const query = els.location.value.trim();
+  if (query === '') { showBanner(t().geo_empty, [], { timeoutMs: UNDO_MS, error: true }); return; }
+  if (!state.geoConsent) {
+    showBanner(t().geo_consent, [
+      { label: t().geo_continue, onClick: () => { state.geoConsent = true; onGeoSearch(); } },
+      { label: t().cancel, onClick: () => {} },
+    ]);
+    return;
+  }
+  if (els.geoSearch.disabled) return;
+  const key = `${lang}\n${query}`;
+  if (geoMemo.has(key)) { showGeoResults(geoMemo.get(key)); return; }
+  const started = Date.now();
+  state.geoAbort = new AbortController();
+  els.geoSearch.disabled = true;
+  els.geoSearch.textContent = t().geo_searching;
+  searchNominatim(query, lang, { signal: state.geoAbort.signal })
+    .then((results) => { geoMemo.set(key, results); showGeoResults(results); })
+    .catch((e) => { if (e.code !== 'aborted') showBanner(geoErrorText(e), [], { error: true }); })
+    .finally(() => {
+      // Re-enabled no sooner than one second after the start: the rate limit.
+      const left = Math.max(0, GEO_MIN_GAP_MS - (Date.now() - started));
+      setTimeout(() => { els.geoSearch.disabled = false; els.geoSearch.textContent = t().geo_search; }, left);
+    });
+}
+
+function showGeoResults(results) {
+  if (results.length === 0) { clearGeoResults(); showBanner(t().geo_none, [], { timeoutMs: UNDO_MS }); return; }
+  const items = results.map((r) => {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'link';
+    b.textContent = r.label;
+    b.addEventListener('click', () => chooseGeo(r));
+    li.appendChild(b);
+    return li;
+  });
+  els.geoList.replaceChildren(...items);
+  els.geoResults.hidden = false;
+}
+
+function chooseGeo(r) {
+  els.location.value = r.label;
+  els.geo.value = r.geo;
+  clearGeoResults();
+  syncOsmSearch();
+}
+
+function clearGeoResults() {
+  els.geoList.replaceChildren();
+  els.geoResults.hidden = true;
+}
+
+function geoErrorText(e) {
+  switch (e && e.code) {
+    case 'http': return t().geo_err_http(e.status);
+    case 'timeout': return t().geo_err_timeout;
+    case 'bad_response': return t().geo_err_bad;
+    case 'empty': return t().geo_empty;
+    default: return t().geo_err_network;
+  }
 }
 
 function showFormErrors(keys) {
@@ -913,6 +989,7 @@ function main() {
     interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
     location: $('f-location'), desc: $('f-desc'), url: $('f-url'), geo: $('f-geo'), osmSearch: $('osm-search'), formError: $('form-error'),
+    geoSearch: $('geo-search'), geoResults: $('geo-results'), geoList: $('geo-list'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
     payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
@@ -940,7 +1017,8 @@ function main() {
   els.duration.addEventListener('change', onDurationChange);
   els.date.addEventListener('change', onFromDateChange);
   els.endDate.addEventListener('change', onToDateChange);
-  els.location.addEventListener('input', syncOsmSearch);
+  els.location.addEventListener('input', () => { syncOsmSearch(); clearGeoResults(); });
+  els.geoSearch.addEventListener('click', onGeoSearch);
   // Show what was understood: a pasted map link turns into the canonical 'lat,lon'.
   els.geo.addEventListener('change', () => { const g = parseGeo(els.geo.value); if (g) els.geo.value = g; });
   els.daysMode.addEventListener('change', (e) => {

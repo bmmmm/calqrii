@@ -4,7 +4,8 @@ Static page that turns calendar events into offline QR codes (iCalendar
 payload, scanned straight into the phone's calendar) or into link codes that
 open a read-only view of the events on this page. No build, no framework,
 no runtime dependency; the only state that leaves the page is a `#fragment`
-share link.
+share link — and, on explicit request after consent, the address-search text
+to Nominatim.
 
 ## Commands
 
@@ -28,6 +29,8 @@ and the test script.
   dates, RRULE, content-hashed UID.
 - `fragment.js` — share-link codec `#v=1&tz=…&e=<base64url(JSON)>`; `linkFor`
   builds a share link or a link-mode QR text from a page base.
+- `geocode.js` — opt-in Nominatim address search; the only module that may
+  name the network (`fetch` exactly once, one origin — the gate pins both).
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
 - `i18n.js` — `STR.en` / `STR.de`, key parity pinned by test.
 - `qrcodegen.js` — Project Nayuki, vendored verbatim (sha256 in `NOTICE`).
@@ -37,8 +40,9 @@ and the test script.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
   shipped files; `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 
-Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
-`ics.js`, `fragment.js → model.js`. All imports static and relative (`./x.js`).
+Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
+geocode.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
+static and relative (`./x.js`).
 
 ## Traps
 
@@ -50,9 +54,14 @@ Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
 - `qrcodegen.js` stays byte-identical to the hash in `NOTICE` (check with
   `shasum -a 256 qrcodegen.js`; no gate enforces it yet). The oracle test in
   `test/qr.test.mjs` proves the encoder still produces the pinned symbol.
-- **Zero storage.** Never add storage APIs, network calls, writes to the
-  address bar/history, HTML string sinks or external resources — the smoke
-  gate greps for them and the meta CSP pins the rest.
+- **Zero storage.** Never add storage APIs, network calls outside
+  `geocode.js`, writes to the address bar/history, HTML string sinks or
+  external resources — the smoke gate greps for them and the meta CSP pins
+  the rest. The bare word `fetch` may appear only in `geocode.js`, exactly
+  once (the injectable default of `searchNominatim`); no other URL in that
+  file, not even in a comment; `searchNominatim(` is called once in `app.js`,
+  inside `onGeoSearch()`, after the `state.geoConsent` check, and
+  `onGeoSearch` is bound once, to `click`.
 - The smoke gate's §7 reads whole function bodies (`bodyOf` skips the
   parameter list) and demands an anchor per gated function; keep `.value`
   (also Intl's `formatToParts().value`), `$(` and `readEditor` out of
