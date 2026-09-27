@@ -1,4 +1,5 @@
-// calqrii web app: month grid → editor → events → one QR per event.
+// calqrii web app: month grid → editor → events → one QR per event; an opened
+// link lands in a read-only view of its events first.
 //
 // Zero-storage contract: this file never touches a storage API, the network,
 // the history or the address bar (scripts/web-smoke.mjs greps for that). The
@@ -40,6 +41,8 @@ const state = {
   editingId: null,
   combined: false,
   payload: 'ics', // 'ics' | 'link': what the QR codes carry
+  screen: 'editor', // 'editor' | 'view': an opened link lands in the read-only view
+  openQr: new Set(), // ids of view cards whose code is shown
   dirty: false,
   focus: null,
 };
@@ -56,7 +59,6 @@ const icsOpts = () => ({ now: SESSION_NOW, tz: state.tz });
 function applyLang(code) {
   lang = STR[code] ? code : 'en';
   document.documentElement.lang = lang;
-  document.title = t().title;
   for (const el of document.querySelectorAll('[data-i18n]')) {
     const s = t()[el.dataset.i18n];
     if (typeof s === 'string') el.textContent = s;
@@ -604,7 +606,77 @@ function renderPayload() {
   els.payload.querySelector(`input[value="${state.payload}"]`).checked = true;
 }
 
+// --- view: the events of an opened link, read-only
+
+function dateBadge(date) {
+  // The i18n tables, not Intl parts: the names match the grid's, and no form field is read (gate §7).
+  return {
+    weekday: t().weekday_codes[weekdayOf(date)],
+    day: String(Number(date.slice(8))),
+    month: t().months[Number(date.slice(5, 7)) - 1].slice(0, 3),
+  };
+}
+
+function showText(el, s) {
+  el.textContent = s;
+  el.hidden = s === '';
+}
+
+function renderView() {
+  const items = [];
+  for (const ev of state.events) {
+    const node = els.tplViewCard.content.cloneNode(true);
+    node.querySelector('li').dataset.id = String(ev.id);
+    const badge = dateBadge(ev.date);
+    node.querySelector('.db-wd').textContent = badge.weekday;
+    node.querySelector('.db-day').textContent = badge.day;
+    node.querySelector('.db-month').textContent = badge.month;
+    node.querySelector('.view-title').textContent = ev.title;
+    node.querySelector('.view-when').textContent = whenText(ev);
+    showText(node.querySelector('.view-rec'), recText(ev));
+    showText(node.querySelector('.view-where'), ev.location);
+    showText(node.querySelector('.view-desc'), ev.description);
+    const urlP = node.querySelector('.view-url');
+    urlP.hidden = !/^https?:\/\//.test(ev.url);
+    if (!urlP.hidden) { const a = urlP.querySelector('a'); a.href = ev.url; a.textContent = ev.url; }
+    node.querySelector('[data-view="add"]').textContent = t().view_add;
+    const qrBtn = node.querySelector('[data-view="qr"]');
+    const panel = node.querySelector('[data-qr-panel]');
+    panel.id = `view-qr-${ev.id}`;
+    qrBtn.setAttribute('aria-controls', panel.id);
+    setViewQr(qrBtn, panel, ev, state.openQr.has(ev.id));
+    items.push(node);
+  }
+  els.viewList.replaceChildren(...items);
+  els.viewAddAll.hidden = state.events.length < 2;
+}
+
+/** The card's offline code, toggled in place so keyboard focus stays on the button. */
+function setViewQr(btn, panel, ev, open) {
+  btn.textContent = open ? t().view_hide_qr : t().view_show_qr;
+  btn.setAttribute('aria-expanded', String(open));
+  panel.hidden = !open;
+  if (open) {
+    const ics = serializeEvent(ev, icsOpts());
+    renderQrPanel(panel, { text: ics, ics, title: ev.title, stem: fileStem(ev), kind: 'ics', tooBig: t().qr_too_big });
+  } else {
+    panel.replaceChildren();
+    panelData.delete(panel);
+  }
+}
+
+function editShared() {
+  state.screen = 'editor';
+  render();
+  els.form.scrollIntoView({ block: 'start' });
+}
+
 function render() {
+  const view = state.screen === 'view' && state.events.length > 0;
+  els.viewSection.hidden = !view;
+  for (const el of [els.calendarSection, els.form, els.eventsSection]) el.hidden = view;
+  document.title = view ? `${state.events[0].title} · calqrii` : t().title;
+  if (view) { renderView(); return; } // nothing else is visible; up to 200 hidden codes would be wasted work
   renderCalendar();
   renderSelection();
   renderEditorState();
@@ -658,6 +730,8 @@ function applyLoaded(res) {
   state.editingId = null;
   state.selected.clear();
   state.combined = false;
+  state.screen = 'view';
+  state.openQr.clear();
   resetEditor();
   const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (res.tz !== browserTz) showBanner(t().tz_foreign(res.tz));
@@ -676,9 +750,11 @@ function onHashChange() {
   const res = decodeFragment(location.hash.slice(1));
   if (res.status === 'empty') return;
   if (res.status === 'error') { showBanner(t()[res.code], [], { error: true }); return; }
-  if (state.events.length === 0) { applyLoaded(res); render(); return; }
+  const load = () => { applyLoaded(res); render(); };
+  // The view holds a link's events unedited, and the previous link is one Back away: replace without asking.
+  if (state.events.length === 0 || state.screen === 'view') { load(); return; }
   showBanner(t().replace_q, [
-    { label: t().replace_yes, onClick: () => { applyLoaded(res); render(); } },
+    { label: t().replace_yes, onClick: load },
     { label: t().replace_no, onClick: () => {} },
   ]);
 }
@@ -734,6 +810,20 @@ function onQrAction(panel, act) {
 function onPanelClick(e) {
   const act = e.target.closest('[data-act]');
   if (act) { onQrAction(act.closest('[data-qr-panel]'), act.dataset.act); return; }
+  const viewBtn = e.target.closest('[data-view]');
+  if (viewBtn) {
+    const li = viewBtn.closest('li');
+    const ev = state.events.find((x) => x.id === Number(li.dataset.id));
+    if (!ev) return;
+    if (viewBtn.dataset.view === 'add') {
+      downloadIcs(serializeEvent(ev, icsOpts()), fileStem(ev));
+    } else if (viewBtn.dataset.view === 'qr') {
+      const open = !state.openQr.has(ev.id);
+      if (open) state.openQr.add(ev.id); else state.openQr.delete(ev.id);
+      setViewQr(viewBtn, li.querySelector('[data-qr-panel]'), ev, open);
+    }
+    return;
+  }
   const evb = e.target.closest('[data-ev]');
   if (!evb) return;
   const id = Number(evb.closest('li').dataset.id);
@@ -757,6 +847,8 @@ function main() {
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
     payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
+    calendarSection: $('calendar-section'), eventsSection: $('events'), viewSection: $('view-section'),
+    viewList: $('view-list'), viewAddAll: $('view-add-all'), viewEdit: $('view-edit'), tplViewCard: $('tpl-view-card'),
     linkInfo: $('link-info'), tzInfo: $('tz-info'), tplEvent: $('tpl-event'), tplQr: $('tpl-qr'),
   };
   resetEditor();
@@ -791,6 +883,9 @@ function main() {
     renderCombined();
   });
   els.copyLink.addEventListener('click', copyLink);
+  els.viewList.addEventListener('click', onPanelClick);
+  els.viewAddAll.addEventListener('click', () => downloadIcs(serializeCalendar(state.events, icsOpts()), 'calqrii-all-events'));
+  els.viewEdit.addEventListener('click', editShared);
   window.addEventListener('hashchange', onHashChange);
   window.addEventListener('beforeunload', (e) => {
     if (state.dirty && state.events.length) { e.preventDefault(); e.returnValue = ''; }

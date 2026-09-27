@@ -27,6 +27,17 @@
 <main>
   <div id="banner" role="status" hidden></div>
 
+  <!-- An opened link lands here, read-only; "Edit these events" reveals the editor below. -->
+  <section id="view-section" aria-labelledby="view-head" hidden>
+    <h2 id="view-head" class="view-intro" data-i18n="view_intro">Shared via calqrii</h2>
+    <ol id="view-list"></ol>
+    <p class="note" data-i18n="view_add_note"></p>
+    <div class="actions">
+      <button type="button" id="view-add-all" class="primary" data-i18n="view_add_all" hidden>Add all (.ics)</button>
+      <button type="button" id="view-edit" data-i18n="view_edit">Edit these events</button>
+    </div>
+  </section>
+
   <section id="calendar-section" aria-labelledby="calendar-head">
     <h2 id="calendar-head" class="visually-hidden" data-i18n="calendar_label">Month view</h2>
     <div id="calendar"></div>
@@ -206,6 +217,27 @@
     <button type="button" data-act="ics"></button>
   </div>
   <details><summary class="show-text"></summary><pre class="qr-text"></pre></details>
+</template>
+<!-- The link carries no href attribute: an empty href would read as a missing asset to the smoke gate. -->
+<template id="tpl-view-card">
+  <li>
+    <article class="view-card">
+      <div class="view-top">
+        <div class="date-badge" aria-hidden="true"><span class="db-wd"></span><span class="db-day"></span><span class="db-month"></span></div>
+        <h3 class="view-title"></h3>
+      </div>
+      <p class="view-when"></p>
+      <p class="view-rec"></p>
+      <p class="view-where"></p>
+      <p class="view-desc"></p>
+      <p class="view-url"><a target="_blank" rel="noopener noreferrer"></a></p>
+      <div class="actions">
+        <button type="button" class="primary" data-view="add"></button>
+        <button type="button" data-view="qr" aria-expanded="false"></button>
+      </div>
+      <div class="qr-panel" data-qr-panel hidden></div>
+    </article>
+  </li>
 </template>
 
 <script src="qrcodegen.js"></script>

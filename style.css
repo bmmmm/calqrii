@@ -209,5 +209,31 @@ pre {
 #payload .note { margin: 0 0 0 24px; }
 pre.qr-text.link { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* --- view (an opened link) --- */
+.view-intro { margin: 8px 0 4px; font-size: 0.95rem; font-weight: 400; color: var(--muted); }
+#view-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.view-card { padding: 20px; border: 1px solid var(--border); border-radius: 12px; }
+.view-top { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.date-badge {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  min-width: 4.25rem;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--accent-weak);
+  line-height: 1.15;
+}
+.db-wd, .db-month { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+.db-day { font-size: 1.7rem; font-weight: 700; }
+.view-title { margin: 0; font-size: 1.35rem; line-height: 1.25; overflow-wrap: anywhere; }
+.view-when { margin: 0 0 2px; font-weight: 600; }
+.view-rec, .view-where { margin: 0 0 2px; color: var(--muted); }
+.view-desc { margin: 12px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.view-url { margin: 8px 0 0; overflow-wrap: anywhere; }
+.view-url a { color: var(--accent); }
+.view-card .actions button, #view-section > .actions button { flex: 1 1 10rem; min-height: 44px; }
+.view-card .qr-panel { margin-top: 12px; }
+
 footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
 footer a { color: var(--accent); }

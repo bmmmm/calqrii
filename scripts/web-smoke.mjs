@@ -172,6 +172,7 @@ function bodyOf(src, fn) {
     ['renderQrPanel', ['qrFor(text)', 'panelData.set('], [formRead]],
     ['renderList', ['eventLink(ev)'], [formRead]],
     ['renderCombined', ['shareURL()'], [formRead]],
+    ['renderView', ['state.events'], [formRead]],
   ];
   for (const [fn, anchors, forbids] of gated) {
     const body = bodyOf(src, fn);
