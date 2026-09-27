@@ -185,6 +185,16 @@
   </section>
 </main>
 
+<!-- Print sheet: a direct child of <body>, so the print CSS can hide every sibling; filled on "Print", cleared on afterprint. -->
+<section id="print-sheet" aria-hidden="true">
+  <h1 class="ps-title"></h1>
+  <p class="ps-when"></p>
+  <p class="ps-where"></p>
+  <div class="ps-qr"></div>
+  <p class="ps-hint"></p>
+  <p class="ps-link"></p>
+</section>
+
 <footer>
   <p data-i18n="privacy"></p>
   <p><a href="https://github.com/bmmmm/calqrii" data-i18n="source">Source (GPL-3.0-or-later)</a></p>
@@ -215,6 +225,8 @@
     <button type="button" data-act="svg"></button>
     <button type="button" data-act="png"></button>
     <button type="button" data-act="ics"></button>
+    <button type="button" data-act="print"></button>
+    <button type="button" data-act="copy" data-i18n="copy_qr"></button>
   </div>
   <details><summary class="show-text"></summary><pre class="qr-text"></pre></details>
 </template>

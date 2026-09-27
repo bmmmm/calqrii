@@ -480,9 +480,10 @@ function qrFor(text) {
 /**
  * Fills a [data-qr-panel]: the code from `text`, the .ics download from `ics`,
  * the too-big message from `tooBig(bytes)`; `kind` ('ics' | 'link') only
- * labels what the code contains — it never reads the form.
+ * labels what the code contains; `ev` (null for the combined code) feeds the
+ * print sheet — it never reads the form.
  */
-function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig }) {
+function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig, ev = null }) {
   const node = els.tplQr.content.cloneNode(true);
   const res = qrFor(text);
   const qrEl = node.querySelector('.qr');
@@ -502,16 +503,18 @@ function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig }) 
     meta.hidden = true;
     err.textContent = res.error === 'too_big' ? tooBig(res.bytes) : res.error;
     err.hidden = false;
-    for (const b of node.querySelectorAll('[data-act="svg"], [data-act="png"]')) b.disabled = true;
+    for (const b of node.querySelectorAll('[data-act="svg"], [data-act="png"], [data-act="print"], [data-act="copy"]')) b.disabled = true;
   }
   node.querySelector('[data-act="svg"]').textContent = t().dl_svg;
   node.querySelector('[data-act="png"]').textContent = t().dl_png;
   node.querySelector('[data-act="ics"]').textContent = t().dl_ics;
+  node.querySelector('[data-act="print"]').textContent = t().print_qr;
+  node.querySelector('[data-act="copy"]').textContent = t().copy_qr;
   node.querySelector('.show-text').textContent = kind === 'link' ? t().show_link : t().show_ics;
   const pre = node.querySelector('pre.qr-text');
   pre.textContent = text;
   pre.classList.toggle('link', kind === 'link'); // a URL is one long line: wrap it
-  panelData.set(panel, { text, ics, stem, kind });
+  panelData.set(panel, { text, ics, stem, kind, ev });
   panel.replaceChildren(node);
 }
 
@@ -562,7 +565,7 @@ function renderList() {
     const ics = serializeEvent(ev, opts);
     renderQrPanel(node.querySelector('[data-qr-panel]'), {
       text: link ? eventLink(ev) : ics, ics, title: ev.title, stem: fileStem(ev), kind: state.payload,
-      tooBig: link ? t().qr_too_big_link : t().qr_too_big,
+      tooBig: link ? t().qr_too_big_link : t().qr_too_big, ev,
     });
     node.querySelector('[data-ev="edit"]').textContent = t().edit;
     node.querySelector('[data-ev="duplicate"]').textContent = t().duplicate;
@@ -658,7 +661,7 @@ function setViewQr(btn, panel, ev, open) {
   panel.hidden = !open;
   if (open) {
     const ics = serializeEvent(ev, icsOpts());
-    renderQrPanel(panel, { text: ics, ics, title: ev.title, stem: fileStem(ev), kind: 'ics', tooBig: t().qr_too_big });
+    renderQrPanel(panel, { text: ics, ics, title: ev.title, stem: fileStem(ev), kind: 'ics', tooBig: t().qr_too_big, ev });
   } else {
     panel.replaceChildren();
     panelData.delete(panel);
@@ -797,19 +800,64 @@ function qrPngBlob(qr, scale = 8) {
   });
 }
 
-function onQrAction(panel, act) {
+function onQrAction(panel, act, button) {
   const data = panelData.get(panel);
   if (!data) return;
   if (act === 'ics') { downloadIcs(data.ics, data.stem); return; }
+  if (act === 'print') { printPanel(panel); return; }
+  if (act === 'copy') { copyPanel(panel, button); return; }
   const res = qrFor(data.text); // the memo may have been cleared since the panel was rendered
   if (res.error) return;
   if (act === 'svg') download(new Blob([res.svg], { type: 'image/svg+xml' }), data.stem + '.svg');
   else if (act === 'png') qrPngBlob(res.qr).then((b) => download(b, data.stem + '.png')).catch((e) => showBanner(String(e.message || e), [], { error: true }));
 }
 
+// --- print sheet and clipboard
+
+/** Title, when, where, the code, a hint (and the URL for a link code) — from the panel's data, never the form. */
+function fillPrintSheet(data) {
+  const s = els.printSheet;
+  s.querySelector('.ps-title').textContent = data.ev ? data.ev.title : t().combined_title;
+  s.querySelector('.ps-when').textContent = data.ev ? whenText(data.ev) : '';
+  s.querySelector('.ps-where').textContent = data.ev ? data.ev.location : '';
+  const res = qrFor(data.text);
+  const svg = res.error ? null : svgNode(res.svg);
+  s.querySelector('.ps-qr').replaceChildren(...(svg ? [svg] : []));
+  s.querySelector('.ps-hint').textContent = data.kind === 'link' ? t().print_hint_link : t().print_hint_ics;
+  s.querySelector('.ps-link').textContent = data.kind === 'link' ? data.text : '';
+}
+
+function printPanel(panel) {
+  const data = panelData.get(panel);
+  if (!data) return;
+  fillPrintSheet(data);
+  document.body.classList.add('print-one'); // the print CSS shows only the sheet while this class is set
+  window.print();
+}
+
+function clearPrintSheet() {
+  document.body.classList.remove('print-one');
+  for (const el of els.printSheet.children) el.replaceChildren();
+}
+
+async function copyPanel(panel, button) {
+  const data = panelData.get(panel);
+  if (!data) return;
+  const res = qrFor(data.text);
+  if (res.error) return;
+  try {
+    if (typeof ClipboardItem === 'undefined') throw new Error('no ClipboardItem');
+    // The blob promise goes in as is: Safari requires write() to start inside the user gesture.
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': qrPngBlob(res.qr) })]);
+    flash(button, t().copied_qr);
+  } catch {
+    showBanner(t().copy_qr_failed, [], { error: true });
+  }
+}
+
 function onPanelClick(e) {
   const act = e.target.closest('[data-act]');
-  if (act) { onQrAction(act.closest('[data-qr-panel]'), act.dataset.act); return; }
+  if (act) { onQrAction(act.closest('[data-qr-panel]'), act.dataset.act, act); return; }
   const viewBtn = e.target.closest('[data-view]');
   if (viewBtn) {
     const li = viewBtn.closest('li');
@@ -849,6 +897,7 @@ function main() {
     payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
     calendarSection: $('calendar-section'), eventsSection: $('events'), viewSection: $('view-section'),
     viewList: $('view-list'), viewAddAll: $('view-add-all'), viewEdit: $('view-edit'), tplViewCard: $('tpl-view-card'),
+    printSheet: $('print-sheet'),
     linkInfo: $('link-info'), tzInfo: $('tz-info'), tplEvent: $('tpl-event'), tplQr: $('tpl-qr'),
   };
   resetEditor();
@@ -887,6 +936,7 @@ function main() {
   els.viewAddAll.addEventListener('click', () => downloadIcs(serializeCalendar(state.events, icsOpts()), 'calqrii-all-events'));
   els.viewEdit.addEventListener('click', editShared);
   window.addEventListener('hashchange', onHashChange);
+  window.addEventListener('afterprint', clearPrintSheet);
   window.addEventListener('beforeunload', (e) => {
     if (state.dirty && state.events.length) { e.preventDefault(); e.returnValue = ''; }
   });

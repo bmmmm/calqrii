@@ -173,6 +173,9 @@ function bodyOf(src, fn) {
     ['renderList', ['eventLink(ev)'], [formRead]],
     ['renderCombined', ['shareURL()'], [formRead]],
     ['renderView', ['state.events'], [formRead]],
+    ['fillPrintSheet', ['qrFor(data.text)'], [formRead]],
+    ['printPanel', ['panelData.get('], [formRead]],
+    ['copyPanel', ['panelData.get('], [formRead]],
   ];
   for (const [fn, anchors, forbids] of gated) {
     const body = bodyOf(src, fn);

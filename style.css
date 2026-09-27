@@ -237,3 +237,17 @@ pre.qr-text.link { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
 footer a { color: var(--accent); }
+
+/* --- print sheet: one code with its title, only while body.print-one is set --- */
+#print-sheet { display: none; }
+@media print {
+  body.print-one > :not(#print-sheet) { display: none !important; }
+  body.print-one > #print-sheet { display: block; max-width: 16cm; margin: 0 auto; text-align: center; color: #000; background: #fff; }
+  .ps-title { font-size: 24pt; margin: 0 0 6pt; }
+  .ps-when { font-size: 14pt; font-weight: 600; margin: 0 0 4pt; }
+  .ps-where { font-size: 12pt; margin: 0 0 12pt; }
+  .ps-qr svg { width: 11cm; height: 11cm; display: block; margin: 0 auto; }
+  .ps-hint { font-size: 11pt; margin: 10pt 0 0; }
+  .ps-link { font-size: 8pt; overflow-wrap: anywhere; margin: 6pt 0 0; }
+  @page { margin: 2cm; }
+}
