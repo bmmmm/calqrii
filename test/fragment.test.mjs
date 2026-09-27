@@ -52,11 +52,18 @@ bad(B_FRAGMENT.replace('v=1&', ''), 'e without v');
 bad(link([{ t: 'x', d: '2026-01-01' }]) + '$', 'e with $');
 bad('v=1&tz=UTC&e=abcde', 'length ≡ 1 mod 4');
 bad('v=1&tz=UTC&e=_w', 'e=_w is 0xFF, not UTF-8');
+{
+  // valid JSON shape around one invalid UTF-8 byte: only a fatal decoder refuses it
+  const enc = new TextEncoder();
+  const raw = new Uint8Array([...enc.encode('[{"t":"'), 0xff, ...enc.encode('","d":"2026-01-01","a":1}]')]);
+  bad('v=1&tz=UTC&e=' + bytesToB64url(raw), 'invalid UTF-8 inside a JSON string');
+}
 bad('v=1&tz=UTC&e=', 'empty e');
 bad(link({ t: 'x', d: '2026-01-01' }), 'object instead of array');
 bad(link([]), 'empty array');
-bad(link([{ t: 'x', d: '2026-01-01', zz: 1 }]), 'unknown key');
+bad(link([{ t: 'x', d: '2026-01-01', a: 1, zz: 1 }]), 'unknown key on an otherwise valid event');
 bad(link([{ t: 'x', d: '2026-01-01', a: true }]), 'a:true');
+bad(link([{ t: 'x', d: '2026-01-01', a: 2, s: '09:00' }]), 'a:2 on an otherwise valid timed event');
 bad(link([{ t: 5, d: '2026-01-01' }]), 't:5');
 bad(link([{ t: '', d: '2026-01-01', a: 1 }]), 'empty title');
 bad(link([{ t: 'x', d: '2026-01-02', D: '2026-01-01', a: 1 }]), 'endDate before date');

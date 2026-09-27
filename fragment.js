@@ -123,7 +123,7 @@ export function decodeFragment(raw) {
   const es = p.getAll('e');
   if (es.length !== 1) return fail('e');
   const e = es[0];
-  if (e.length > MAX_E_LENGTH || !/^[A-Za-z0-9_-]+$/.test(e) || e.length % 4 === 1) return fail('e');
+  if (e.length > MAX_E_LENGTH || !/^[A-Za-z0-9_-]+$/.test(e)) return fail('e');
   const tz = p.get('tz');
   if (!isValidTz(tz)) return fail('tz');
   let arr;
