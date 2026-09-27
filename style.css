@@ -205,6 +205,9 @@ pre {
   white-space: pre;
 }
 #combined-panel { margin-top: 8px; }
+#payload { margin: 0 0 8px; }
+#payload .note { margin: 0 0 0 24px; }
+pre.qr-text.link { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
 footer a { color: var(--accent); }

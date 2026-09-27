@@ -6,7 +6,7 @@
 // it lives in the #fragment.
 import { renderMonth } from './calendar.js';
 import { serializeEvent, serializeCalendar } from './ics.js';
-import { encodeFragment, decodeFragment } from './fragment.js';
+import { decodeFragment, linkFor } from './fragment.js';
 import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
 import {
@@ -39,6 +39,7 @@ const state = {
   mode: 'each',
   editingId: null,
   combined: false,
+  payload: 'ics', // 'ics' | 'link': what the QR codes carry
   dirty: false,
   focus: null,
 };
@@ -476,9 +477,10 @@ function qrFor(text) {
 
 /**
  * Fills a [data-qr-panel]: the code from `text`, the .ics download from `ics`,
- * the too-big message from `tooBig(bytes)` — it never reads the form.
+ * the too-big message from `tooBig(bytes)`; `kind` ('ics' | 'link') only
+ * labels what the code contains — it never reads the form.
  */
-function renderQrPanel(panel, { text, ics, title, stem, tooBig }) {
+function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig }) {
   const node = els.tplQr.content.cloneNode(true);
   const res = qrFor(text);
   const qrEl = node.querySelector('.qr');
@@ -503,9 +505,11 @@ function renderQrPanel(panel, { text, ics, title, stem, tooBig }) {
   node.querySelector('[data-act="svg"]').textContent = t().dl_svg;
   node.querySelector('[data-act="png"]').textContent = t().dl_png;
   node.querySelector('[data-act="ics"]').textContent = t().dl_ics;
-  node.querySelector('.show-text').textContent = t().show_ics;
-  node.querySelector('pre.qr-text').textContent = text;
-  panelData.set(panel, { text, ics, stem });
+  node.querySelector('.show-text').textContent = kind === 'link' ? t().show_link : t().show_ics;
+  const pre = node.querySelector('pre.qr-text');
+  pre.textContent = text;
+  pre.classList.toggle('link', kind === 'link'); // a URL is one long line: wrap it
+  panelData.set(panel, { text, ics, stem, kind });
   panel.replaceChildren(node);
 }
 
@@ -538,6 +542,7 @@ function fileStem(ev) {
 
 function renderList() {
   const opts = icsOpts();
+  const link = state.payload === 'link';
   els.emptyList.hidden = state.events.length > 0;
   const items = [];
   for (const ev of state.events) {
@@ -553,7 +558,10 @@ function renderList() {
     where.textContent = ev.location;
     where.hidden = ev.location === '';
     const ics = serializeEvent(ev, opts);
-    renderQrPanel(node.querySelector('[data-qr-panel]'), { text: ics, ics, title: ev.title, stem: fileStem(ev), tooBig: t().qr_too_big });
+    renderQrPanel(node.querySelector('[data-qr-panel]'), {
+      text: link ? eventLink(ev) : ics, ics, title: ev.title, stem: fileStem(ev), kind: state.payload,
+      tooBig: link ? t().qr_too_big_link : t().qr_too_big,
+    });
     node.querySelector('[data-ev="edit"]').textContent = t().edit;
     node.querySelector('[data-ev="duplicate"]').textContent = t().duplicate;
     node.querySelector('[data-ev="delete"]').textContent = t().delete;
@@ -565,14 +573,19 @@ function renderList() {
 
 function renderCombined() {
   const enough = state.events.length >= 2;
+  const link = state.payload === 'link';
   els.combinedToggle.disabled = !enough;
   if (!enough) state.combined = false;
   els.combinedToggle.checked = state.combined;
   els.combinedPanel.hidden = !state.combined;
+  // As calendar data the combined code is experimental (scanners read one event); as a link it carries them all.
+  els.combinedLabel.textContent = link ? t().combined_label_link : t().combined_label;
+  els.combinedNote.textContent = link ? t().combined_note_link : t().combined_note;
+  els.combinedNote.classList.toggle('warn', !link);
   const panel = els.combinedPanel.querySelector('[data-qr-panel]');
   if (state.combined) {
     const ics = serializeCalendar(state.events, icsOpts());
-    renderQrPanel(panel, { text: ics, ics, title: t().combined_title, stem: 'calqrii-all-events', tooBig: t().qr_too_big });
+    renderQrPanel(panel, { text: link ? shareURL() : ics, ics, title: t().combined_title, stem: 'calqrii-all-events', kind: state.payload, tooBig: t().qr_too_big_all });
   } else {
     panel.replaceChildren();
     panelData.delete(panel);
@@ -586,10 +599,16 @@ function renderShareInfo() {
   els.tzInfo.textContent = t().tz_note(state.tz);
 }
 
+function renderPayload() {
+  // Set from state on every render: Firefox restores radio state across reloads, the page must not.
+  els.payload.querySelector(`input[value="${state.payload}"]`).checked = true;
+}
+
 function render() {
   renderCalendar();
   renderSelection();
   renderEditorState();
+  renderPayload();
   renderList();
   renderCombined();
   renderShareInfo();
@@ -597,9 +616,19 @@ function render() {
 
 // --- share link (fragment only; never written to the address bar)
 
+/** Where this copy of the page lives — never a hard-coded origin (the page is self-hostable). */
+function pageBase() {
+  return location.origin + location.pathname;
+}
+
 /** Built from state.events, never from the form: the link must describe the QR codes on the page. */
 function shareURL() {
-  return location.origin + location.pathname + '#' + encodeFragment({ events: state.events, tz: state.tz });
+  return linkFor(pageBase(), state.events, state.tz);
+}
+
+/** One event's own link: what a link-mode QR carries; it opens the page with exactly this event. */
+function eventLink(ev) {
+  return linkFor(pageBase(), [ev], state.tz);
 }
 
 function flash(button, text) {
@@ -727,6 +756,7 @@ function main() {
     location: $('f-location'), desc: $('f-desc'), url: $('f-url'), formError: $('form-error'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
+    payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
     linkInfo: $('link-info'), tzInfo: $('tz-info'), tplEvent: $('tpl-event'), tplQr: $('tpl-qr'),
   };
   resetEditor();
@@ -754,6 +784,12 @@ function main() {
   els.list.addEventListener('click', onPanelClick);
   els.combinedPanel.addEventListener('click', onPanelClick);
   els.combinedToggle.addEventListener('change', () => { state.combined = els.combinedToggle.checked; renderCombined(); });
+  els.payload.addEventListener('change', (e) => {
+    if (e.target.name !== 'payload') return;
+    state.payload = e.target.value === 'link' ? 'link' : 'ics';
+    renderList();
+    renderCombined();
+  });
   els.copyLink.addEventListener('click', copyLink);
   window.addEventListener('hashchange', onHashChange);
   window.addEventListener('beforeunload', (e) => {

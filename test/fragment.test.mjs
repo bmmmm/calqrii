@@ -1,8 +1,8 @@
 // Share-link codec tests. Run: node test/fragment.test.mjs
 import assert from 'node:assert/strict';
-import { encodeFragment, decodeFragment, bytesToB64url, b64urlToBytes, LINK_VERSION } from '../fragment.js';
+import { encodeFragment, decodeFragment, linkFor, bytesToB64url, b64urlToBytes, LINK_VERSION } from '../fragment.js';
 import { newEvent } from '../model.js';
-import { A, B, C, B_FRAGMENT } from './helpers/fixtures.mjs';
+import { A, B, C, B_FRAGMENT, PAGES_BASE } from './helpers/fixtures.mjs';
 
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
@@ -32,6 +32,16 @@ eq(decodeFragment(B_FRAGMENT).status, 'ok', 'pinned fragment decodes');
 ok(!B_FRAGMENT.split('&e=')[1].includes('='), 'e value has no =');
 eq(encodeFragment({ events: [], tz: TZ }), '', 'empty → empty string');
 eq(LINK_VERSION, '1', 'link version');
+
+// links: one event per code; the fragment survives the URL parser unchanged
+for (const ev of events) {
+  const u = new URL(linkFor(PAGES_BASE, [ev], TZ));
+  eq(u.origin + u.pathname, PAGES_BASE, 'link keeps the page base');
+  const one = decodeFragment(u.hash.slice(1));
+  ok(one.status === 'ok' && one.events.length === 1 && one.tz === TZ, `single-event link decodes (${ev.title})`);
+  deq(strip(one.events[0]), strip(ev), `single-event link round-trips ${ev.title}`);
+}
+eq(linkFor(PAGES_BASE, events, TZ), PAGES_BASE + '#' + frag, 'multi-event link is base + # + fragment');
 
 // key order is part of the format
 const wire = JSON.parse(new TextDecoder().decode(b64urlToBytes(new URLSearchParams(frag).get('e'))));

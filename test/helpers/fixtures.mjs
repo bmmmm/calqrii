@@ -77,3 +77,5 @@ export const C_ICS = ics([...HEAD, ...C_VEVENT, 'END:VCALENDAR']);
 export const ABC_ICS = ics([...HEAD, ...A_VEVENT, ...B_VEVENT, ...C_VEVENT, 'END:VCALENDAR']);
 
 export const B_FRAGMENT = 'v=1&tz=Europe%2FBerlin&e=W3sidCI6IkjDvHR0ZW53b2NoZW5lbmRlIiwiZCI6IjIwMjYtMTAtMTciLCJEIjoiMjAyNi0xMC0xOCIsImEiOjEsImwiOiJCZXJnaMO8dHRlIGFtIEJydW5uc3RlaW4ifV0';
+// The public copy's base; shipped code never hard-codes it (the page is self-hostable), fixtures may.
+export const PAGES_BASE = 'https://bmmmm.github.io/calqrii/';

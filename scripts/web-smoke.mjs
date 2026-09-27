@@ -161,20 +161,27 @@ function bodyOf(src, fn) {
 }
 {
   const src = read('app.js');
-  const formRead = /\breadEditor\b|\.value\b|\$\(/;
-  // Every gated body must contain an anchor from its real body, so a body
+  const formRead = [/\breadEditor\b|\.value\b|\$\(/, 'reads the form instead of state'];
+  const literalOrigin = [/['"`]https?:|location\.href/, 'hard-codes an origin (the page is self-hostable)'];
+  // Every gated body must contain anchors from its real body, so a body
   // extracted too short (or emptied) fails loudly instead of passing vacuously.
-  const share = bodyOf(src, 'shareURL');
-  if (!share) fail('app.js: shareURL() not found -- its gate has nothing to check');
-  else if (!share.includes('state.events')) fail('app.js: shareURL() does not encode state.events');
-  else if (formRead.test(share)) fail('app.js: shareURL() reads the form instead of state');
-  else ok('app.js shareURL() encodes state.events and reads no form field');
-  const panel = bodyOf(src, 'renderQrPanel');
-  if (!panel) fail('app.js: renderQrPanel() not found -- its gate has nothing to check');
-  else if (!panel.includes('qrFor(text)')) fail('app.js: renderQrPanel() does not build the code from its text argument');
-  else if (!panel.includes('panelData.set(')) fail('app.js: renderQrPanel() does not record what it rendered for the downloads');
-  else if (formRead.test(panel)) fail('app.js: renderQrPanel() reads the form');
-  else ok('app.js renderQrPanel() builds the code from its text, records it, and reads no form field');
+  const gated = [
+    ['pageBase', ['location.origin + location.pathname'], [literalOrigin]],
+    ['shareURL', ['linkFor(pageBase(), state.events, state.tz)'], [formRead, literalOrigin]],
+    ['eventLink', ['linkFor(pageBase(), [ev], state.tz)'], [formRead, literalOrigin]],
+    ['renderQrPanel', ['qrFor(text)', 'panelData.set('], [formRead]],
+    ['renderList', ['eventLink(ev)'], [formRead]],
+    ['renderCombined', ['shareURL()'], [formRead]],
+  ];
+  for (const [fn, anchors, forbids] of gated) {
+    const body = bodyOf(src, fn);
+    if (!body) { fail(`app.js: ${fn}() not found -- its gate has nothing to check`); continue; }
+    const missing = anchors.filter((a) => !body.includes(a));
+    const hits = forbids.filter(([re]) => re.test(body)).map(([, what]) => what);
+    if (missing.length) fail(`app.js: ${fn}() lacks ${missing.map((a) => `"${a}"`).join(', ')}`);
+    else if (hits.length) fail(`app.js: ${fn}() ${hits.join('; ')}`);
+    else ok(`app.js ${fn}() keeps its anchors, ${forbids.includes(formRead) ? 'reads no form field' : 'names no origin'}`);
+  }
 }
 
 // --- 8. the serializer imports and produces the pinned fixture

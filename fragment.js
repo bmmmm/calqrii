@@ -57,6 +57,11 @@ export function encodeFragment({ events, tz }) {
   return p.toString();
 }
 
+/** `base` (origin + path, no '#') + '#' + the fragment of `events`: a share link, or a link-mode QR text. */
+export function linkFor(base, events, tz) {
+  return base + '#' + encodeFragment({ events, tz });
+}
+
 function isValidTz(tz) {
   if (typeof tz !== 'string' || tz.length === 0 || tz.length > 64) return false;
   try {

@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import './helpers/load-qrcodegen.mjs';
 import { encodeQr, eccFor, qrSvg, svgPathData, svgFromQr, utf8Length, QUIET_ZONE, HARD_LIMIT_BYTES } from '../qr.js';
 import { serializeEvent, serializeCalendar } from '../ics.js';
-import { OPTS, A, B, C } from './helpers/fixtures.mjs';
+import { linkFor } from '../fragment.js';
+import { OPTS, A, B, C, PAGES_BASE } from './helpers/fixtures.mjs';
 
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
@@ -60,6 +61,7 @@ const table = [
   ['B', serializeEvent(B, OPTS), 277, 12, 65, 'M', 6, 2245],
   ['C', serializeEvent(C, OPTS), 425, 16, 81, 'M', 2, 3251],
   ['A+B+C', serializeCalendar([A, B, C], OPTS), 963, 25, 117, 'M', 4, 6880],
+  ['B link', linkFor(PAGES_BASE, [B], OPTS.tz), 189, 10, 57, 'M', 2, 1668], // link-mode code: the page URL with B in the fragment
 ];
 for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {
   const r = encodeQr(text);

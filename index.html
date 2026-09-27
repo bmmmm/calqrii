@@ -152,11 +152,18 @@
 
   <section id="events" aria-labelledby="events-head">
     <h2 id="events-head" data-i18n="events_head">Events</h2>
+    <fieldset id="payload">
+      <legend data-i18n="payload_legend">QR contains</legend>
+      <label class="check"><input type="radio" name="payload" value="ics" checked> <span data-i18n="payload_ics">Calendar data (works offline)</span></label>
+      <label class="check"><input type="radio" name="payload" value="link" aria-describedby="payload-link-note"> <span data-i18n="payload_link">Link to this page</span></label>
+      <p id="payload-link-note" class="note" data-i18n="payload_link_note"></p>
+    </fieldset>
     <p id="empty-list" class="note" data-i18n="empty_list">No events yet.</p>
     <ol id="event-list"></ol>
-    <label class="check"><input type="checkbox" id="combined-toggle" disabled> <span data-i18n="combined_label">Experimental: all events in one QR code</span></label>
+    <!-- Label and note switch with the payload (app.js), so they carry no data-i18n. -->
+    <label class="check"><input type="checkbox" id="combined-toggle" disabled> <span id="combined-label">Experimental: all events in one QR code</span></label>
     <div id="combined-panel" hidden>
-      <p class="note warn" data-i18n="combined_note"></p>
+      <p id="combined-note" class="note warn"></p>
       <div class="qr-panel" data-qr-panel></div>
     </div>
     <div class="actions">
