@@ -4,7 +4,8 @@
 // resources), the meta CSP pinned directive by directive, no inline script
 // or handlers, every referenced asset relative and present, the module graph
 // closed over SHIPPED, pages.yml shipping every file, the share link and the
-// QR panel derived from state only, and the serializer importable.
+// QR panel derived from state only, the serializer importable, and every
+// i18n key the page names present in the string table.
 //
 // Usage: node scripts/web-smoke.mjs   (exit 1 on any failure)
 import { readFileSync, existsSync } from 'node:fs';
@@ -137,19 +138,32 @@ const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
 }
 
 // --- 7. the link and the QR panel describe state, never the form
+/** Source text of `function fn(...) {...}`; null when absent or unbalanced. */
 function bodyOf(src, fn) {
   const start = src.indexOf(`function ${fn}(`);
   if (start === -1) return null;
+  // Skip the parameter list first: a destructured parameter carries its own
+  // '{', and counting from there would return the signature as the "body".
+  let i = src.indexOf('(', start);
   let depth = 0;
-  for (let i = src.indexOf('{', start); i < src.length; i++) {
-    if (src[i] === '{') depth++;
-    else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+  for (; i < src.length; i++) {
+    if (src[i] === '(') depth++;
+    else if (src[i] === ')' && --depth === 0) break;
+  }
+  const open = src.indexOf('{', i);
+  if (i >= src.length || open === -1) return null;
+  depth = 0;
+  for (let j = open; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}' && --depth === 0) return src.slice(start, j + 1);
   }
   return null;
 }
 {
   const src = read('app.js');
   const formRead = /\breadEditor\b|\.value\b|\$\(/;
+  // Every gated body must contain an anchor from its real body, so a body
+  // extracted too short (or emptied) fails loudly instead of passing vacuously.
   const share = bodyOf(src, 'shareURL');
   if (!share) fail('app.js: shareURL() not found -- its gate has nothing to check');
   else if (!share.includes('state.events')) fail('app.js: shareURL() does not encode state.events');
@@ -157,8 +171,9 @@ function bodyOf(src, fn) {
   else ok('app.js shareURL() encodes state.events and reads no form field');
   const panel = bodyOf(src, 'renderQrPanel');
   if (!panel) fail('app.js: renderQrPanel() not found -- its gate has nothing to check');
+  else if (!panel.includes('qrFor(')) fail('app.js: renderQrPanel() does not build the code through qrFor()');
   else if (formRead.test(panel)) fail('app.js: renderQrPanel() reads the form');
-  else ok('app.js renderQrPanel() reads no form field');
+  else ok('app.js renderQrPanel() builds the code through qrFor() and reads no form field');
 }
 
 // --- 8. the serializer imports and produces the pinned fixture
@@ -168,6 +183,22 @@ function bodyOf(src, fn) {
   const got = serializeEvent(B, OPTS);
   if (got !== B_ICS) fail('ics.js does not reproduce fixture B');
   else ok(`ics.js imports and reproduces fixture B (${Buffer.byteLength(got)} bytes)`);
+}
+
+// --- 9. every i18n key the page names exists: applyLang() skips unknown keys
+// silently, so a typo would ship the English placeholder in the other language
+{
+  const { STR } = await import('../i18n.js');
+  const names = new Set();
+  for (const m of htmlNoComments.matchAll(/\bdata-i18n(?:-aria)?="([^"]+)"/g)) names.add(m[1]);
+  for (const m of read('app.js').matchAll(/\bt\(\)\.([A-Za-z_]\w*)/g)) names.add(m[1]);
+  if (names.size === 0) {
+    fail('index.html and app.js name no i18n key at all -- the gate has nothing to check');
+  } else {
+    const missing = [...names].filter((k) => !Object.hasOwn(STR.en, k));
+    if (missing.length) fail(`i18n keys named by the page but missing from STR.en: ${missing.join(', ')}`);
+    else ok(`all ${names.size} i18n keys named by index.html and app.js exist`);
+  }
 }
 
 process.exit(failures ? 1 : 0);
