@@ -12,6 +12,16 @@ const RULE_PL = {
 
 const EVERY_DE = { daily: 'Jeden Tag', weekly: 'Jede Woche', monthly: 'Jeden Monat', yearly: 'Jedes Jahr' };
 
+const DUR_UNITS = { en: ['h', 'min'], de: ['Std.', 'Min.'] };
+
+/** '1 h 15 min' / '1 Std. 15 Min.'; whole hours and sub-hour values drop the empty part. */
+function durLabel(lang, min) {
+  const [hu, mu] = DUR_UNITS[lang];
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return [h ? `${h} ${hu}` : '', m ? `${m} ${mu}` : ''].filter(Boolean).join(' ');
+}
+
 function recSummary(lang, rec, dayNames) {
   if (rec.freq === 'none') return '';
   const every = rec.interval === 1
@@ -45,6 +55,9 @@ export const STR = {
     f_allday: 'All day',
     f_from: 'From',
     f_to: 'To',
+    f_duration: 'Duration',
+    dur_custom: 'other — enter end time',
+    dur_label: (min) => durLabel('en', min),
     f_date: 'Date',
     f_time: 'Time',
     f_start_time: 'Start time',
@@ -145,6 +158,9 @@ export const STR = {
     f_allday: 'Ganztägig',
     f_from: 'Von',
     f_to: 'Bis',
+    f_duration: 'Dauer',
+    dur_custom: 'andere — Endzeit eingeben',
+    dur_label: (min) => durLabel('de', min),
     f_date: 'Datum',
     f_time: 'Uhrzeit',
     f_start_time: 'Startzeit',

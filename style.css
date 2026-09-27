@@ -124,7 +124,7 @@ input, select, textarea {
   border-radius: 4px;
 }
 input:disabled { opacity: 0.5; }
-.row { display: grid; grid-template-columns: 4rem 1fr; gap: 8px; align-items: center; }
+.row { display: grid; grid-template-columns: 6rem 1fr; gap: 8px; align-items: center; }
 .row label { margin-top: 0; }
 .fields { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fields input[type="date"] { flex: 1 1 9rem; }

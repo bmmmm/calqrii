@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   newEvent, normalizeEvent, validateEvent, expandDraft, isValidDate, isValidTime, addDays, weekdayOf, compareDates, LIMITS,
+  DURATIONS, DEFAULT_DURATION, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
 } from '../model.js';
 import { STR } from '../i18n.js';
 
@@ -24,6 +25,38 @@ eq(addDays('2026-03-01', -1), '2026-02-28', 'addDays backwards');
 eq(weekdayOf('2026-10-05'), 'MO', 'Monday');
 eq(weekdayOf('2026-10-04'), 'SU', 'Sunday');
 eq(compareDates('2026-01-01', '2026-01-02'), -1, 'compareDates');
+
+// duration helpers
+const T = (date, startTime, endDate, endTime) => ({ date, startTime, endDate, endTime });
+const D = '2026-10-05';
+eq(timeToMinutes('09:30'), 570, 'timeToMinutes');
+ok(timeToMinutes('00:00') === 0 && timeToMinutes('23:59') === 1439, 'timeToMinutes bounds');
+ok(isNaN(timeToMinutes('24:00')) && isNaN(timeToMinutes('')), 'timeToMinutes refuses invalid');
+eq(minutesToTime(570), '09:30', 'minutesToTime');
+eq(minutesToTime(5), '00:05', 'minutesToTime pads');
+eq(minutesToTime(1470), '00:30', 'minutesToTime wraps past midnight');
+eq(minutesToTime(-15), '23:45', 'minutesToTime wraps negative');
+deq(addMinutes(D, '09:00', 60), { date: D, time: '10:00' }, 'addMinutes same day');
+deq(addMinutes(D, '23:30', 60), { date: '2026-10-06', time: '00:30' }, 'addMinutes carries the day');
+deq(addMinutes(D, '12:30', 480), { date: D, time: '20:30' }, 'addMinutes 8 h stays on the day');
+deq(addMinutes('2026-12-31', '23:45', 15), { date: '2027-01-01', time: '00:00' }, 'addMinutes exactly midnight → next day');
+deq(addMinutes('', '23:30', 60), { date: '', time: '00:30' }, 'addMinutes keeps a blank date blank');
+ok(addMinutes(D, '9:00', 60) === null && addMinutes(D, '09:00', NaN) === null, 'addMinutes refuses invalid input');
+eq(spanMinutes(T(D, '09:00', D, '10:15')), 75, 'spanMinutes same day');
+eq(spanMinutes(T(D, '23:30', '2026-10-06', '00:30')), 60, 'spanMinutes across midnight');
+eq(spanMinutes(T('2026-12-31', '23:00', '2027-01-01', '01:00')), 120, 'spanMinutes across a year');
+eq(spanMinutes(T('', '09:00', '', '10:00')), 60, 'spanMinutes: a blank endDate counts as the same day');
+ok(isNaN(spanMinutes(T(D, '09:00', D, ''))), 'spanMinutes NaN without an end');
+eq(durationOption(T(D, '', D, ''), '90'), '90', 'blank times keep the preset');
+eq(durationOption(T(D, '', D, ''), 'custom'), String(DEFAULT_DURATION), 'blank times reset custom to the default');
+eq(durationOption(T(D, '', '2026-10-07', ''), '60'), 'custom', 'blank times across days are custom');
+eq(durationOption(T(D, '09:00', D, ''), '60'), 'custom', 'a start without an end is custom');
+eq(durationOption(T(D, '09:00', D, '10:15'), 'custom'), '75', 'a matching span picks its preset');
+eq(durationOption(T(D, '09:00', D, '10:10'), '60'), 'custom', 'an odd span is custom');
+eq(durationOption(T(D, '23:30', '2026-10-06', '00:30'), 'custom'), '60', 'an overnight hour is the 60 preset');
+eq(durationOption(T(D, '09:00', '2026-10-07', '10:00'), '60'), 'custom', 'a multi-day span never matches a preset');
+deq(DURATIONS, [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480], 'duration presets');
+eq(DEFAULT_DURATION, 60, 'default duration');
 
 // validation: valid + invalid per rule
 deq(errsOf({}), [], 'base draft is valid');
@@ -95,5 +128,9 @@ for (const k of ['err_title_required', 'err_too_long', 'err_date_invalid', 'err_
 eq(STR.de.rec_summary({ freq: 'weekly', interval: 1, byDay: ['MO', 'WE'], count: 10, until: null }, STR.de.weekday_codes), 'Jede Woche, am Mo, Mi, 10-mal', 'de summary');
 eq(STR.en.rec_summary({ freq: 'monthly', interval: 2, byDay: [], count: null, until: '2027-06-30' }, STR.en.weekday_codes), 'Every 2 months, until 2027-06-30', 'en summary');
 eq(STR.en.rec_summary({ freq: 'none', interval: 1, byDay: [], count: null, until: null }, {}), '', 'none summary is empty');
+eq(STR.en.dur_label(75), '1 h 15 min', 'en duration label');
+eq(STR.de.dur_label(75), '1 Std. 15 Min.', 'de duration label');
+eq(STR.en.dur_label(45), '45 min', 'sub-hour label has no hour part');
+eq(STR.de.dur_label(120), '2 Std.', 'whole hours have no minute part');
 
 console.log(`model.test: ${checks} checks passed`);

@@ -9,7 +9,9 @@ import { serializeEvent, serializeCalendar } from './ics.js';
 import { encodeFragment, decodeFragment } from './fragment.js';
 import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
-import { expandDraft, isValidDate, weekdayOf, compareDates, addDays, LIMITS } from './model.js';
+import {
+  expandDraft, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption, DEFAULT_DURATION, LIMITS,
+} from './model.js';
 
 // One timestamp per page load: DTSTAMP must not drift between renders, or
 // the QR of an unchanged event would change under the user's hands.
@@ -56,6 +58,7 @@ function applyLang(code) {
     if (typeof s === 'string') el.textContent = s;
   }
   for (const el of document.querySelectorAll('[data-wd]')) el.textContent = t().weekdays_short[Number(el.dataset.wd)];
+  for (const el of document.querySelectorAll('[data-dur]')) el.textContent = t().dur_label(Number(el.dataset.dur));
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t()[el.dataset.i18nAria]);
   $('lang-en').setAttribute('aria-pressed', String(lang === 'en'));
   $('lang-de').setAttribute('aria-pressed', String(lang === 'de'));
@@ -121,6 +124,7 @@ function fillEditor(ev) {
   els.endDate.value = ev.endDate;
   els.start.value = ev.startTime;
   els.end.value = ev.endTime;
+  els.duration.value = durationOption(ev, String(DEFAULT_DURATION));
   els.location.value = ev.location;
   els.desc.value = ev.description;
   els.url.value = ev.url;
@@ -138,6 +142,7 @@ function resetEditor() {
   els.form.reset();
   els.date.value = today;
   els.endDate.value = today;
+  els.duration.value = String(DEFAULT_DURATION);
   els.interval.value = '1';
   els.count.value = '10';
   showFormErrors([]);
@@ -171,6 +176,9 @@ function syncDatesFromSelection() {
     els.endDate.value = today;
   }
   ensureStartWeekday();
+  // A span picked in the grid is re-read (→ "other"); one day or "each" carries the end along.
+  const span = !each && days.length >= 2;
+  if (span || !applyDuration()) syncDurationSelect();
 }
 
 /** The grid follows the date fields: a typed date selects it. */
@@ -191,6 +199,54 @@ function ensureStartWeekday() {
   const wd = weekdayOf(els.date.value);
   const box = els.byDay.querySelector(`input[value="${wd}"]`);
   if (box && ![...els.byDay.querySelectorAll('input')].some((c) => c.checked && c.value === wd)) box.checked = true;
+}
+
+/**
+ * Preset + valid start → end = start + duration; the end date follows unless
+ * the date fields are blank ("each"). A selection of 2+ days shrinks to the
+ * start day (expandDraft 'span' would take the end date from it). Returns
+ * false when nothing was applied ("other", or no valid start).
+ */
+function applyDuration() {
+  if (els.duration.value === 'custom' || !isValidTime(els.start.value)) return false;
+  const date = eachMode() || !isValidDate(els.date.value) ? '' : els.date.value;
+  const end = addMinutes(date, els.start.value, Number(els.duration.value));
+  els.end.value = end.time;
+  if (date !== '') {
+    els.endDate.value = end.date;
+    if (state.selected.size > 1) state.selected = new Set([date]); // a new Set: followStart() compares identity
+  }
+  return true;
+}
+
+/** The select re-reads the fields; all-day hides it, so its value is left alone. */
+function syncDurationSelect() {
+  if (els.allDay.checked) return;
+  els.duration.value = durationOption(readEditor(), els.duration.value);
+}
+
+/** Start or duration changed: the end follows; render only if the selection shrank (no list re-render per keystroke). */
+function followStart() {
+  const sel = state.selected;
+  applyDuration();
+  if (state.selected !== sel) render();
+}
+
+function onDurationChange() {
+  if (els.duration.value === 'custom') els.end.focus();
+  else followStart();
+}
+
+function onFromDateChange() {
+  syncSelectionFromDates();
+  if (!applyDuration()) syncDurationSelect();
+  render();
+}
+
+function onToDateChange() {
+  syncSelectionFromDates();
+  syncDurationSelect();
+  render();
 }
 
 function sortEvents() {
@@ -346,6 +402,7 @@ function renderEditorState() {
   const allDay = els.allDay.checked;
   els.start.hidden = allDay;
   els.end.hidden = allDay;
+  els.durRow.hidden = allDay;
   if (allDay) { els.start.value = ''; els.end.value = ''; }
   const freq = els.freq.value;
   els.repOpts.hidden = freq === 'none';
@@ -616,6 +673,7 @@ function main() {
     banner: $('banner'), calendar: $('calendar'), selInfo: $('sel-info'), clearSel: $('clear-sel'),
     form: $('editor'), title: $('f-title'), allDay: $('f-allday'), daysMode: $('days-mode'),
     date: $('f-date'), start: $('f-start'), endDate: $('f-end-date'), end: $('f-end'),
+    duration: $('f-duration'), durRow: $('dur-row'),
     freq: $('f-freq'), repOpts: $('rep-opts'), interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
     location: $('f-location'), desc: $('f-desc'), url: $('f-url'), formError: $('form-error'),
@@ -631,10 +689,15 @@ function main() {
   els.clearSel.addEventListener('click', () => { state.selected.clear(); syncDatesFromSelection(); render(); });
   els.form.addEventListener('submit', submitEditor);
   els.cancelEdit.addEventListener('click', cancelEdit);
-  els.allDay.addEventListener('change', renderEditorState);
+  // Unticking "All day" leaves blank times: the select keeps its preset, or shows "other" across days.
+  els.allDay.addEventListener('change', () => { syncDurationSelect(); renderEditorState(); });
   els.freq.addEventListener('change', () => { ensureStartWeekday(); renderEditorState(); });
   els.interval.addEventListener('input', renderEditorState);
-  for (const el of [els.date, els.endDate]) el.addEventListener('change', () => { syncSelectionFromDates(); render(); });
+  els.start.addEventListener('input', followStart);
+  els.end.addEventListener('input', syncDurationSelect);
+  els.duration.addEventListener('change', onDurationChange);
+  els.date.addEventListener('change', onFromDateChange);
+  els.endDate.addEventListener('change', onToDateChange);
   els.daysMode.addEventListener('change', (e) => {
     if (e.target.name === 'days-mode') { state.mode = e.target.value; syncDatesFromSelection(); render(); }
   });

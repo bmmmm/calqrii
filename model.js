@@ -57,6 +57,56 @@ export function compareDates(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+// --- duration: a UI derivative of start and end; the event keeps only the times
+
+export const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480];
+export const DEFAULT_DURATION = 60;
+const DAY_MIN = 1440;
+
+/** Minutes since midnight for a valid 'HH:MM'; NaN otherwise. */
+export function timeToMinutes(time) {
+  return isValidTime(time) ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) : NaN;
+}
+
+/** 'HH:MM' for a minute count, wrapped into one day: 1470 → '00:30', -15 → '23:45'. */
+export function minutesToTime(min) {
+  const m = ((min % DAY_MIN) + DAY_MIN) % DAY_MIN;
+  return `${pad(Math.floor(m / 60), 2)}:${pad(m % 60, 2)}`;
+}
+
+/** Wall-clock start + minutes → { date, time }; the day carry moves the date; a blank date stays blank. */
+export function addMinutes(date, time, minutes) {
+  if (!isValidTime(time) || !Number.isInteger(minutes)) return null;
+  const total = timeToMinutes(time) + minutes;
+  return { date: isValidDate(date) ? addDays(date, Math.floor(total / DAY_MIN)) : date, time: minutesToTime(total) };
+}
+
+/**
+ * Minutes from start to end of { date, startTime, endDate, endTime }. A blank
+ * endDate counts as the same day (normalizeEvent defaults it to date); NaN
+ * when a time or a given date is invalid.
+ */
+export function spanMinutes(ev) {
+  const end = ev.endDate;
+  const days = end === '' ? 0
+    : isValidDate(ev.date) && isValidDate(end) ? Math.round((fromIso(end) - fromIso(ev.date)) / 86400000) : NaN;
+  return days * DAY_MIN + timeToMinutes(ev.endTime) - timeToMinutes(ev.startTime);
+}
+
+/**
+ * Value of the duration select for these fields: the matching preset or
+ * 'custom'. Blank times on a single day carry no information: a preset
+ * (`current`) stays, 'custom' falls back to the default.
+ */
+export function durationOption(ev, current) {
+  const sameDay = ev.endDate === '' || ev.endDate === ev.date;
+  if (ev.startTime === '' && ev.endTime === '' && sameDay) {
+    return current && current !== 'custom' ? current : String(DEFAULT_DURATION);
+  }
+  const span = spanMinutes(ev);
+  return DURATIONS.includes(span) ? String(span) : 'custom';
+}
+
 const str = (v) => (typeof v === 'string' ? v : '').normalize('NFC').trim();
 
 export function normalizeEvent(ev) {

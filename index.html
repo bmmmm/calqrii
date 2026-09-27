@@ -54,6 +54,29 @@
         <input type="time" id="f-start" name="start" class="time" step="60" data-i18n-aria="f_start_time">
       </div>
     </div>
+    <!-- Duration is a view of start and end: the end time follows a preset, a typed end selects one or "other". -->
+    <div class="row" id="dur-row">
+      <label for="f-duration" data-i18n="f_duration">Duration</label>
+      <select id="f-duration" name="duration">
+        <option value="15" data-dur="15">15 min</option>
+        <option value="30" data-dur="30">30 min</option>
+        <option value="45" data-dur="45">45 min</option>
+        <option value="60" data-dur="60" selected>1 h</option>
+        <option value="75" data-dur="75">1 h 15 min</option>
+        <option value="90" data-dur="90">1 h 30 min</option>
+        <option value="105" data-dur="105">1 h 45 min</option>
+        <option value="120" data-dur="120">2 h</option>
+        <option value="150" data-dur="150">2 h 30 min</option>
+        <option value="180" data-dur="180">3 h</option>
+        <option value="210" data-dur="210">3 h 30 min</option>
+        <option value="240" data-dur="240">4 h</option>
+        <option value="300" data-dur="300">5 h</option>
+        <option value="360" data-dur="360">6 h</option>
+        <option value="420" data-dur="420">7 h</option>
+        <option value="480" data-dur="480">8 h</option>
+        <option value="custom" data-i18n="dur_custom">other — enter end time</option>
+      </select>
+    </div>
     <div class="row">
       <label for="f-end-date" data-i18n="f_to">To</label>
       <div class="fields">
