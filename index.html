@@ -86,15 +86,28 @@
     </div>
 
     <label for="f-freq" data-i18n="f_repeat">Repeat</label>
-    <select id="f-freq" name="freq">
+    <!-- Presets stand for "every 1 unit" (weekly: on the start weekday); only "Custom…" unfolds the rule. -->
+    <select id="f-freq" name="freq" aria-describedby="rep-summary">
       <option value="none" data-i18n="rep_none">Never</option>
       <option value="daily" data-i18n="rep_daily">Daily</option>
       <option value="weekly" data-i18n="rep_weekly">Weekly</option>
       <option value="monthly" data-i18n="rep_monthly">Monthly</option>
       <option value="yearly" data-i18n="rep_yearly">Yearly</option>
+      <option value="custom" data-i18n="rep_custom">Custom…</option>
     </select>
+    <p id="rep-summary" class="note" hidden></p>
 
     <div id="rep-opts" hidden>
+      <div id="rep-custom" hidden>
+      <div class="row">
+        <label for="f-cfreq" data-i18n="f_cfreq">Frequency</label>
+        <select id="f-cfreq" name="cfreq">
+          <option value="daily" data-i18n="rep_daily">Daily</option>
+          <option value="weekly" data-i18n="rep_weekly" selected>Weekly</option>
+          <option value="monthly" data-i18n="rep_monthly">Monthly</option>
+          <option value="yearly" data-i18n="rep_yearly">Yearly</option>
+        </select>
+      </div>
       <div class="row">
         <label for="f-interval" data-i18n="f_interval">Every</label>
         <div class="fields">
@@ -112,6 +125,7 @@
         <label class="check day"><input type="checkbox" name="byday" value="SA"> <span data-wd="5">Sat</span></label>
         <label class="check day"><input type="checkbox" name="byday" value="SU"> <span data-wd="6">Sun</span></label>
       </fieldset>
+      </div>
       <fieldset id="f-ends">
         <legend data-i18n="f_ends">Ends</legend>
         <label class="check"><input type="radio" name="f-ends" value="never" checked> <span data-i18n="end_never">never</span></label>

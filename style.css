@@ -134,9 +134,29 @@ label.check .num { width: 5rem; }
 label.check input[type="date"] { width: auto; }
 fieldset { border: 0; padding: 0; margin: 6px 0 0; display: grid; gap: 2px; }
 legend { font-size: 0.9rem; padding: 0; margin-bottom: 2px; }
-#f-byday { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+#rep-custom { display: grid; gap: 6px; margin: 6px 0 4px; padding-left: 10px; border-left: 2px solid var(--accent-weak); }
+#rep-summary { margin: 2px 0 0; }
+/* Weekday chips: the checkbox stays in the tree (focusable, announced), the span is the visible pill. */
+#f-byday { display: flex; flex-wrap: wrap; gap: 6px; }
 #f-byday legend { width: 100%; }
-label.day { margin-top: 0; }
+#f-byday label.day { position: relative; margin: 0; }
+#f-byday label.day input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+#f-byday label.day span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+#f-byday label.day:hover span { border-color: var(--accent); }
+#f-byday input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+#f-byday input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (forced-colors: active) { #f-byday input:checked + span { border-width: 3px; } }
 #form-error {
   margin: 8px 0 0;
   padding: 8px 12px;

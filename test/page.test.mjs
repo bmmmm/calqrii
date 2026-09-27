@@ -2,7 +2,7 @@
 // constants they stand for. Run: node test/page.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DURATIONS, DEFAULT_DURATION } from '../model.js';
+import { DURATIONS, DEFAULT_DURATION, FREQS } from '../model.js';
 
 let checks = 0;
 const deq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
@@ -23,5 +23,9 @@ const dur = options(selectById('f-duration'));
 deq(dur.map((o) => attr(o, 'value')), [...DURATIONS.map(String), 'custom'], 'duration options mirror DURATIONS plus custom');
 deq(dur.filter((o) => /\bselected\b/.test(o)).map((o) => attr(o, 'value')), [String(DEFAULT_DURATION)], 'the default duration is preselected');
 deq(dur.map((o) => attr(o, 'data-dur')).filter((v) => v !== null), DURATIONS.map(String), 'every preset carries data-dur for relabelling');
+
+// repeat selects
+deq(options(selectById('f-freq')).map((o) => attr(o, 'value')), [...FREQS, 'custom'], 'repeat options are FREQS plus custom');
+deq(options(selectById('f-cfreq')).map((o) => attr(o, 'value')), FREQS.filter((f) => f !== 'none'), 'custom frequencies are FREQS without none');
 
 console.log(`page.test: ${checks} checks passed`);

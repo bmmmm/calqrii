@@ -212,6 +212,23 @@ export function validateEvent(ev) {
   return [...errs];
 }
 
+/** The rule a Repeat preset stands for: every 1 unit; weekly on the start date's weekday. */
+export function presetRule(freq, date) {
+  return { interval: 1, byDay: freq === 'weekly' && isValidDate(date) ? [weekdayOf(date)] : [] };
+}
+
+/**
+ * Which Repeat option shows a stored (normalized) rule: 'none', a preset, or
+ * 'custom' when it needs the custom block (interval > 1, or weekly on other
+ * days than the start's). Count and until never force custom.
+ */
+export function recurrencePreset(rec, date) {
+  if (rec.freq === 'none') return 'none';
+  if (rec.interval !== 1) return 'custom';
+  if (rec.freq === 'weekly' && (rec.byDay.length !== 1 || rec.byDay[0] !== weekdayOf(date))) return 'custom';
+  return rec.freq;
+}
+
 /**
  * Turns the editor draft plus the selected days into events.
  * 0–1 selected days → the draft as is; 'span' → one event from the first to

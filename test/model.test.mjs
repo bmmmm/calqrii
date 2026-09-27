@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   newEvent, normalizeEvent, validateEvent, expandDraft, isValidDate, isValidTime, addDays, weekdayOf, compareDates, LIMITS,
   DURATIONS, DEFAULT_DURATION, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
+  presetRule, recurrencePreset,
 } from '../model.js';
 import { STR } from '../i18n.js';
 
@@ -96,6 +97,27 @@ deq(none.recurrence, { freq: 'none', interval: 1, byDay: [], count: null, until:
 deq(normalizeEvent({ title: 't', date: '2026-10-05', recurrence: { freq: 'monthly', byDay: ['MO'] } }).recurrence.byDay, [], 'byDay only for weekly');
 eq(newEvent().id, 0, 'newEvent id defaults to 0');
 deq(Object.keys(newEvent()).sort(), ['allDay', 'date', 'description', 'endDate', 'endTime', 'id', 'location', 'recurrence', 'startTime', 'title', 'url'], 'event shape');
+
+// recurrence presets
+const ruleOf = (o) => newEvent({ ...base, ...rec(o) }).recurrence;
+deq(presetRule('weekly', '2026-10-07'), { interval: 1, byDay: ['WE'] }, 'weekly preset ticks the start weekday');
+deq(presetRule('monthly', '2026-10-07'), { interval: 1, byDay: [] }, 'non-weekly presets carry no weekdays');
+deq(presetRule('weekly', ''), { interval: 1, byDay: [] }, 'weekly preset without a date has no weekday');
+for (let i = 0; i < 7; i++) {
+  const d = addDays('2026-10-05', i);
+  for (const f of ['daily', 'weekly', 'monthly', 'yearly']) {
+    const ev = newEvent({ ...base, date: d, recurrence: { freq: f, ...presetRule(f, d), count: null, until: null } });
+    deq(validateEvent(ev), [], `preset ${f} on ${d} is valid`);
+    eq(recurrencePreset(ev.recurrence, d), f, `preset ${f} on ${d} round-trips`);
+  }
+}
+eq(recurrencePreset(newEvent(base).recurrence, base.date), 'none', 'no rule shows none');
+eq(recurrencePreset(ruleOf({ interval: 2 }), D), 'custom', 'interval 2 is custom');
+eq(recurrencePreset(ruleOf({ freq: 'weekly', interval: 2, byDay: ['MO'] }), D), 'custom', 'weekly every 2 is custom');
+eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['MO', 'WE'] }), D), 'custom', 'weekly on two days is custom');
+eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['TU'] }), D), 'custom', 'weekly on another day is custom');
+eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['MO'] }), ''), 'custom', 'weekly without a date is custom');
+eq(recurrencePreset(ruleOf({ freq: 'yearly', count: 5 }), D), 'yearly', 'an end never forces custom');
 
 // expandDraft
 const draft = newEvent({ title: 'T', startTime: '09:00', endTime: '10:00', date: '2026-10-05' });

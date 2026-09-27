@@ -10,7 +10,8 @@ import { encodeFragment, decodeFragment } from './fragment.js';
 import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
 import {
-  expandDraft, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption, DEFAULT_DURATION, LIMITS,
+  expandDraft, normalizeEvent, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption,
+  presetRule, recurrencePreset, DEFAULT_DURATION, LIMITS,
 } from './model.js';
 
 // One timestamp per page load: DTSTAMP must not drift between renders, or
@@ -92,9 +93,20 @@ function hideBanner() {
 
 // --- editor
 
+/** The frequency the form means: a preset, or the custom block's own select. */
+function effectiveFreq() {
+  return els.freq.value === 'custom' ? els.cfreq.value : els.freq.value;
+}
+
 function readEditor() {
-  const freq = els.freq.value;
+  const custom = els.freq.value === 'custom';
+  const freq = effectiveFreq();
   const ends = document.querySelector('input[name="f-ends"]:checked').value;
+  // A preset stands for "every 1 unit, weekly on the start weekday"; only the
+  // custom block reads its fields, so stale ticks under a preset never leak.
+  const rule = custom
+    ? { interval: els.interval.value, byDay: [...els.byDay.querySelectorAll('input:checked')].map((c) => c.value) }
+    : presetRule(freq, els.date.value);
   return {
     title: els.title.value,
     allDay: els.allDay.checked,
@@ -107,8 +119,7 @@ function readEditor() {
     url: els.url.value,
     recurrence: {
       freq,
-      interval: els.interval.value,
-      byDay: [...els.byDay.querySelectorAll('input:checked')].map((c) => c.value),
+      ...rule,
       // An empty number field under a ticked "after"/"on" must fail loudly,
       // not silently turn into "never".
       count: freq !== 'none' && ends === 'count' ? (els.count.value === '' ? NaN : Number(els.count.value)) : null,
@@ -129,7 +140,8 @@ function fillEditor(ev) {
   els.desc.value = ev.description;
   els.url.value = ev.url;
   const r = ev.recurrence;
-  els.freq.value = r.freq;
+  els.freq.value = recurrencePreset(r, ev.date);
+  els.cfreq.value = r.freq === 'none' ? 'weekly' : r.freq;
   els.interval.value = String(r.interval);
   for (const c of els.byDay.querySelectorAll('input')) c.checked = r.byDay.includes(c.value);
   const ends = r.count !== null ? 'count' : r.until !== null ? 'until' : 'never';
@@ -193,9 +205,9 @@ function syncSelectionFromDates() {
   ensureStartWeekday();
 }
 
-/** Weekly series: the start day's weekday is always ticked (validateEvent insists). */
+/** Custom weekly rule: the start day's weekday is always ticked (validateEvent insists); presets derive it. */
 function ensureStartWeekday() {
-  if (els.freq.value !== 'weekly' || !isValidDate(els.date.value)) return;
+  if (els.freq.value !== 'custom' || els.cfreq.value !== 'weekly' || !isValidDate(els.date.value)) return;
   const wd = weekdayOf(els.date.value);
   const box = els.byDay.querySelector(`input[value="${wd}"]`);
   if (box && ![...els.byDay.querySelectorAll('input')].some((c) => c.checked && c.value === wd)) box.checked = true;
@@ -247,6 +259,25 @@ function onToDateChange() {
   syncSelectionFromDates();
   syncDurationSelect();
   render();
+}
+
+function onFreqChange() {
+  const v = els.freq.value;
+  if (v !== 'none' && v !== 'custom') els.cfreq.value = v; // "Custom…" then opens on the last preset
+  ensureStartWeekday();
+  renderEditorState();
+}
+
+/** Summary of the rule as the form stands; unfinished fields (NaN count, 'invalid' until) are left out. */
+function repSummaryText() {
+  const rec = normalizeEvent(readEditor()).recurrence;
+  if (rec.freq === 'none' || !(Number.isInteger(rec.interval) && rec.interval >= 1)) return '';
+  const clean = {
+    ...rec,
+    count: Number.isInteger(rec.count) && rec.count >= 1 ? rec.count : null,
+    until: isValidDate(rec.until) ? rec.until : null,
+  };
+  return t().rec_summary(clean, t().weekday_codes);
 }
 
 function sortEvents() {
@@ -404,14 +435,19 @@ function renderEditorState() {
   els.end.hidden = allDay;
   els.durRow.hidden = allDay;
   if (allDay) { els.start.value = ''; els.end.value = ''; }
-  const freq = els.freq.value;
+  const custom = els.freq.value === 'custom';
+  const freq = effectiveFreq();
   els.repOpts.hidden = freq === 'none';
-  els.byDay.hidden = freq !== 'weekly';
+  els.repCustom.hidden = !custom;
+  els.byDay.hidden = !(custom && freq === 'weekly');
   const interval = Number(els.interval.value) || 1;
   els.intervalUnit.textContent = freq === 'none' ? '' : t().f_interval_unit(freq, interval);
   els.repNote.hidden = allDay;
   const day = isValidDate(els.date.value) ? Number(els.date.value.slice(8)) : 0;
   els.repDayNote.hidden = !((freq === 'monthly' || freq === 'yearly') && day > 28);
+  const summary = repSummaryText();
+  els.repSummary.textContent = summary; // cleared, not just hidden: aria-describedby reads hidden text too
+  els.repSummary.hidden = summary === '';
 }
 
 function svgNode(text) {
@@ -674,7 +710,8 @@ function main() {
     form: $('editor'), title: $('f-title'), allDay: $('f-allday'), daysMode: $('days-mode'),
     date: $('f-date'), start: $('f-start'), endDate: $('f-end-date'), end: $('f-end'),
     duration: $('f-duration'), durRow: $('dur-row'),
-    freq: $('f-freq'), repOpts: $('rep-opts'), interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
+    freq: $('f-freq'), cfreq: $('f-cfreq'), repOpts: $('rep-opts'), repCustom: $('rep-custom'), repSummary: $('rep-summary'),
+    interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
     location: $('f-location'), desc: $('f-desc'), url: $('f-url'), formError: $('form-error'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
@@ -691,8 +728,10 @@ function main() {
   els.cancelEdit.addEventListener('click', cancelEdit);
   // Unticking "All day" leaves blank times: the select keeps its preset, or shows "other" across days.
   els.allDay.addEventListener('change', () => { syncDurationSelect(); renderEditorState(); });
-  els.freq.addEventListener('change', () => { ensureStartWeekday(); renderEditorState(); });
-  els.interval.addEventListener('input', renderEditorState);
+  els.freq.addEventListener('change', onFreqChange);
+  els.cfreq.addEventListener('change', () => { ensureStartWeekday(); renderEditorState(); });
+  // Interval, weekday chips, "Ends" radios, count and until all feed the summary line.
+  els.repOpts.addEventListener('input', renderEditorState);
   els.start.addEventListener('input', followStart);
   els.end.addEventListener('input', syncDurationSelect);
   els.duration.addEventListener('change', onDurationChange);
