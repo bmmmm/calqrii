@@ -46,7 +46,9 @@ let lang = 'en';
 const t = () => STR[lang];
 let els = null;
 let bannerTimer = 0;
-const qrMemo = new Map(); // ics text → qrSvg() result, or { error, bytes }
+const qrMemo = new Map(); // QR text → qrSvg() result, or { error, bytes }
+const panelData = new WeakMap(); // [data-qr-panel] → { text, ics, stem }: what was rendered, for the download buttons
+const icsOpts = () => ({ now: SESSION_NOW, tz: state.tz });
 
 // --- i18n
 
@@ -458,24 +460,27 @@ function svgNode(text) {
   return document.importNode(root, true);
 }
 
-function qrFor(ics) {
-  let res = qrMemo.get(ics);
+function qrFor(text) {
+  let res = qrMemo.get(text);
   if (!res) {
     try {
-      res = qrSvg(ics);
+      res = qrSvg(text);
     } catch (e) {
-      res = { error: e && e.message === 'too_big' ? 'too_big' : String(e), bytes: utf8Length(ics) };
+      res = { error: e && e.message === 'too_big' ? 'too_big' : String(e), bytes: utf8Length(text) };
     }
     if (qrMemo.size >= MEMO_MAX) qrMemo.clear();
-    qrMemo.set(ics, res);
+    qrMemo.set(text, res);
   }
   return res;
 }
 
-/** Fills a [data-qr-panel] from the ICS text alone — it never reads the form. */
-function renderQrPanel(panel, ics, title, stem) {
+/**
+ * Fills a [data-qr-panel]: the code from `text`, the .ics download from `ics`,
+ * the too-big message from `tooBig(bytes)` — it never reads the form.
+ */
+function renderQrPanel(panel, { text, ics, title, stem, tooBig }) {
   const node = els.tplQr.content.cloneNode(true);
-  const res = qrFor(ics);
+  const res = qrFor(text);
   const qrEl = node.querySelector('.qr');
   const meta = node.querySelector('.qr-meta');
   const warn = node.querySelector('.qr-warn');
@@ -491,17 +496,16 @@ function renderQrPanel(panel, ics, title, stem) {
   } else {
     qrEl.hidden = true;
     meta.hidden = true;
-    err.textContent = res.error === 'too_big' ? t().qr_too_big(res.bytes) : res.error;
+    err.textContent = res.error === 'too_big' ? tooBig(res.bytes) : res.error;
     err.hidden = false;
     for (const b of node.querySelectorAll('[data-act="svg"], [data-act="png"]')) b.disabled = true;
   }
   node.querySelector('[data-act="svg"]').textContent = t().dl_svg;
   node.querySelector('[data-act="png"]').textContent = t().dl_png;
   node.querySelector('[data-act="ics"]').textContent = t().dl_ics;
-  node.querySelector('.show-ics').textContent = t().show_ics;
-  node.querySelector('pre.ics').textContent = ics;
-  panel.dataset.title = title;
-  panel.dataset.stem = stem;
+  node.querySelector('.show-text').textContent = t().show_ics;
+  node.querySelector('pre.qr-text').textContent = text;
+  panelData.set(panel, { text, ics, stem });
   panel.replaceChildren(node);
 }
 
@@ -533,7 +537,7 @@ function fileStem(ev) {
 }
 
 function renderList() {
-  const opts = { now: SESSION_NOW, tz: state.tz };
+  const opts = icsOpts();
   els.emptyList.hidden = state.events.length > 0;
   const items = [];
   for (const ev of state.events) {
@@ -548,7 +552,8 @@ function renderList() {
     const where = node.querySelector('.ev-where');
     where.textContent = ev.location;
     where.hidden = ev.location === '';
-    renderQrPanel(node.querySelector('[data-qr-panel]'), serializeEvent(ev, opts), ev.title, fileStem(ev));
+    const ics = serializeEvent(ev, opts);
+    renderQrPanel(node.querySelector('[data-qr-panel]'), { text: ics, ics, title: ev.title, stem: fileStem(ev), tooBig: t().qr_too_big });
     node.querySelector('[data-ev="edit"]').textContent = t().edit;
     node.querySelector('[data-ev="duplicate"]').textContent = t().duplicate;
     node.querySelector('[data-ev="delete"]').textContent = t().delete;
@@ -566,9 +571,11 @@ function renderCombined() {
   els.combinedPanel.hidden = !state.combined;
   const panel = els.combinedPanel.querySelector('[data-qr-panel]');
   if (state.combined) {
-    renderQrPanel(panel, serializeCalendar(state.events, { now: SESSION_NOW, tz: state.tz }), t().combined_title, 'calqrii-all-events');
+    const ics = serializeCalendar(state.events, icsOpts());
+    renderQrPanel(panel, { text: ics, ics, title: t().combined_title, stem: 'calqrii-all-events', tooBig: t().qr_too_big });
   } else {
     panel.replaceChildren();
+    panelData.delete(panel);
   }
 }
 
@@ -660,6 +667,10 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function downloadIcs(text, stem) {
+  download(new Blob([text], { type: 'text/calendar;charset=utf-8' }), stem + '.ics');
+}
+
 function qrPngBlob(qr, scale = 8) {
   const modules = qr.size + 2 * QUIET_ZONE;
   const dim = modules * scale;
@@ -682,13 +693,13 @@ function qrPngBlob(qr, scale = 8) {
 }
 
 function onQrAction(panel, act) {
-  const ics = panel.querySelector('pre.ics').textContent;
-  const stem = panel.dataset.stem;
-  if (act === 'ics') { download(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), stem + '.ics'); return; }
-  const res = qrFor(ics); // the memo may have been cleared since the panel was rendered
+  const data = panelData.get(panel);
+  if (!data) return;
+  if (act === 'ics') { downloadIcs(data.ics, data.stem); return; }
+  const res = qrFor(data.text); // the memo may have been cleared since the panel was rendered
   if (res.error) return;
-  if (act === 'svg') download(new Blob([res.svg], { type: 'image/svg+xml' }), stem + '.svg');
-  else if (act === 'png') qrPngBlob(res.qr).then((b) => download(b, stem + '.png')).catch((e) => showBanner(String(e.message || e), [], { error: true }));
+  if (act === 'svg') download(new Blob([res.svg], { type: 'image/svg+xml' }), data.stem + '.svg');
+  else if (act === 'png') qrPngBlob(res.qr).then((b) => download(b, data.stem + '.png')).catch((e) => showBanner(String(e.message || e), [], { error: true }));
 }
 
 function onPanelClick(e) {

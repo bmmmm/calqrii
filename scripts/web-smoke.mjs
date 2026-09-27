@@ -171,9 +171,10 @@ function bodyOf(src, fn) {
   else ok('app.js shareURL() encodes state.events and reads no form field');
   const panel = bodyOf(src, 'renderQrPanel');
   if (!panel) fail('app.js: renderQrPanel() not found -- its gate has nothing to check');
-  else if (!panel.includes('qrFor(')) fail('app.js: renderQrPanel() does not build the code through qrFor()');
+  else if (!panel.includes('qrFor(text)')) fail('app.js: renderQrPanel() does not build the code from its text argument');
+  else if (!panel.includes('panelData.set(')) fail('app.js: renderQrPanel() does not record what it rendered for the downloads');
   else if (formRead.test(panel)) fail('app.js: renderQrPanel() reads the form');
-  else ok('app.js renderQrPanel() builds the code through qrFor() and reads no form field');
+  else ok('app.js renderQrPanel() builds the code from its text, records it, and reads no form field');
 }
 
 // --- 8. the serializer imports and produces the pinned fixture
