@@ -5,7 +5,7 @@ import {
   serializeEvent, serializeCalendar, veventLines, contentLines,
 } from '../ics.js';
 import { newEvent } from '../model.js';
-import { OPTS, A, B, C, A_ICS, B_ICS, C_ICS, ABC_ICS, A_VEVENT, B_VEVENT, C_VEVENT } from './helpers/fixtures.mjs';
+import { OPTS, A, B, C, D, A_ICS, B_ICS, C_ICS, D_ICS, ABC_ICS, A_VEVENT, B_VEVENT, C_VEVENT, D_VEVENT } from './helpers/fixtures.mjs';
 
 const enc = new TextEncoder();
 const bytes = (s) => enc.encode(s).length;
@@ -26,6 +26,20 @@ eq(uidFor(A, OPTS), '6db194cd5c7bbcc9@calqrii', 'UID A');
 eq(uidFor(B, OPTS), '5c4978a00ff66a4f@calqrii', 'UID B');
 eq(uidFor(C, OPTS), 'fb1bf38ddbe27857@calqrii', 'UID C');
 
+// 1b. fixture D: a map position becomes GEO between LOCATION and URL, and is part of the UID
+eq(serializeEvent(D, OPTS), D_ICS, 'fixture D');
+eq(bytes(D_ICS), 339, 'D is 339 bytes');
+eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'UID D');
+{
+  const at = (prefix) => D_VEVENT.findIndex((l) => l.startsWith(prefix));
+  ok(at('GEO:') === at('LOCATION:') + 1 && at('GEO:') === at('URL:') - 1, 'GEO sits right after LOCATION and before URL');
+  eq(D_VEVENT[at('GEO:')], 'GEO:48.137154;11.576124', 'GEO joins the floats with a semicolon');
+  eq(uidFor({ ...D, geo: '' }, OPTS), '40ebc0f190ee1aa2@calqrii', 'the UID changes without the position');
+  const injected = serializeEvent({ ...D, geo: '48.1,11.5\r\nX-INJECTED:y' }, OPTS);
+  ok(!injected.includes('GEO') && !injected.includes('X-INJECTED'), 'a non-canonical position is dropped, never injected');
+  ok(!A_ICS.includes('GEO'), 'no GEO line without a position');
+}
+
 // 2. folding: every physical line ≤ 75 octets; continuation = one space + ≤ 74
 const stress = [
   newEvent({ title: 'ä'.repeat(300), date: '2026-01-01', allDay: true }),
@@ -33,7 +47,7 @@ const stress = [
   newEvent({ title: '👩‍👩‍👧 '.repeat(50), date: '2026-01-01', allDay: true, description: '日本語のテキスト。'.repeat(40) }),
   newEvent({ title: 'x', date: '2026-01-01', allDay: true, description: '漢字'.repeat(120) + '\n' + 'ü'.repeat(80) }),
 ];
-for (const ics of [A_ICS, B_ICS, C_ICS, ...stress.map((ev) => serializeEvent(ev, OPTS))]) {
+for (const ics of [A_ICS, B_ICS, C_ICS, D_ICS, ...stress.map((ev) => serializeEvent(ev, OPTS))]) {
   for (const line of physicalLines(ics)) {
     ok(bytes(line) <= 75, `line ≤ 75 octets: ${bytes(line)}`);
     if (line.startsWith(' ')) {

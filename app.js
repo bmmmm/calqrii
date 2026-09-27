@@ -12,7 +12,7 @@ import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
 import {
   expandDraft, normalizeEvent, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption,
-  presetRule, recurrencePreset, DEFAULT_DURATION, LIMITS,
+  presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, LIMITS,
 } from './model.js';
 
 // One timestamp per page load: DTSTAMP must not drift between renders, or
@@ -122,6 +122,7 @@ function readEditor() {
     location: els.location.value,
     description: els.desc.value,
     url: els.url.value,
+    geo: els.geo.value,
     recurrence: {
       freq,
       ...rule,
@@ -144,6 +145,8 @@ function fillEditor(ev) {
   els.location.value = ev.location;
   els.desc.value = ev.description;
   els.url.value = ev.url;
+  els.geo.value = ev.geo;
+  syncOsmSearch();
   const r = ev.recurrence;
   els.freq.value = recurrencePreset(r, ev.date);
   els.cfreq.value = r.freq === 'none' ? 'weekly' : r.freq;
@@ -162,7 +165,13 @@ function resetEditor() {
   els.duration.value = String(DEFAULT_DURATION);
   els.interval.value = '1';
   els.count.value = '10';
+  syncOsmSearch();
   showFormErrors([]);
+}
+
+/** The OpenStreetMap search link follows the Location field: a plain link, nothing is sent unless it is followed. */
+function syncOsmSearch() {
+  els.osmSearch.href = osmSearchUrl(els.location.value);
 }
 
 function showFormErrors(keys) {
@@ -532,6 +541,20 @@ function recText(ev) {
   return t().rec_summary(ev.recurrence, t().weekday_codes);
 }
 
+/** Location text plus a "Map" link when the event has a position; the paragraph hides when both are empty. */
+function fillWhere(p, ev) {
+  p.querySelector('.where-text').textContent = ev.location;
+  const a = p.querySelector('.where-map');
+  const mapUrl = osmMapUrl(ev.geo);
+  a.hidden = mapUrl === '';
+  if (mapUrl) {
+    a.href = mapUrl;
+    a.textContent = t().map_link;
+    a.setAttribute('aria-label', t().map_aria(ev.title));
+  }
+  p.hidden = ev.location === '' && mapUrl === '';
+}
+
 /** calqrii-<date>-<ascii slug>, at most 40 characters, cut at a word boundary. */
 function fileStem(ev) {
   const prefix = `calqrii-${ev.date}-`;
@@ -559,9 +582,7 @@ function renderList() {
     const rec = node.querySelector('.ev-rec');
     rec.textContent = recText(ev);
     rec.hidden = rec.textContent === '';
-    const where = node.querySelector('.ev-where');
-    where.textContent = ev.location;
-    where.hidden = ev.location === '';
+    fillWhere(node.querySelector('.ev-where'), ev);
     const ics = serializeEvent(ev, opts);
     renderQrPanel(node.querySelector('[data-qr-panel]'), {
       text: link ? eventLink(ev) : ics, ics, title: ev.title, stem: fileStem(ev), kind: state.payload,
@@ -637,7 +658,7 @@ function renderView() {
     node.querySelector('.view-title').textContent = ev.title;
     node.querySelector('.view-when').textContent = whenText(ev);
     showText(node.querySelector('.view-rec'), recText(ev));
-    showText(node.querySelector('.view-where'), ev.location);
+    fillWhere(node.querySelector('.view-where'), ev);
     showText(node.querySelector('.view-desc'), ev.description);
     const urlP = node.querySelector('.view-url');
     urlP.hidden = !/^https?:\/\//.test(ev.url);
@@ -891,7 +912,7 @@ function main() {
     freq: $('f-freq'), cfreq: $('f-cfreq'), repOpts: $('rep-opts'), repCustom: $('rep-custom'), repSummary: $('rep-summary'),
     interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
-    location: $('f-location'), desc: $('f-desc'), url: $('f-url'), formError: $('form-error'),
+    location: $('f-location'), desc: $('f-desc'), url: $('f-url'), geo: $('f-geo'), osmSearch: $('osm-search'), formError: $('form-error'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
     payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
@@ -919,6 +940,9 @@ function main() {
   els.duration.addEventListener('change', onDurationChange);
   els.date.addEventListener('change', onFromDateChange);
   els.endDate.addEventListener('change', onToDateChange);
+  els.location.addEventListener('input', syncOsmSearch);
+  // Show what was understood: a pasted map link turns into the canonical 'lat,lon'.
+  els.geo.addEventListener('change', () => { const g = parseGeo(els.geo.value); if (g) els.geo.value = g; });
   els.daysMode.addEventListener('change', (e) => {
     if (e.target.name === 'days-mode') { state.mode = e.target.value; syncDatesFromSelection(); render(); }
   });

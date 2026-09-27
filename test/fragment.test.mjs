@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { encodeFragment, decodeFragment, linkFor, bytesToB64url, b64urlToBytes, LINK_VERSION } from '../fragment.js';
 import { newEvent } from '../model.js';
-import { A, B, C, B_FRAGMENT, PAGES_BASE } from './helpers/fixtures.mjs';
+import { A, B, C, D, B_FRAGMENT, D_FRAGMENT, PAGES_BASE } from './helpers/fixtures.mjs';
 
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
@@ -18,7 +18,7 @@ const bad = (raw, m) => { const r = decodeFragment(raw); ok(r.status === 'error'
 const emoji = newEvent({ title: '🎂 Geburtstag Oma 🎉', date: '2026-11-03', startTime: '15:00', endTime: '17:30',
   description: 'Kuchen\nKerzen\n\nGeschenke', location: 'Bei Oma', url: 'https://ex.org/?a=1&b=2',
   recurrence: { freq: 'yearly', interval: 1, byDay: [], count: null, until: '2030-12-31' } });
-const events = [A, B, C, emoji];
+const events = [A, B, C, emoji, D];
 const frag = encodeFragment({ events, tz: TZ });
 ok(!frag.startsWith('#'), 'no leading #');
 const back = decodeFragment(frag);
@@ -50,6 +50,23 @@ deq(Object.keys(wire[3]), ['t', 'd', 's', 'e', 'l', 'n', 'u', 'r'], 'emoji wire 
 deq(wire[2].r, { f: 'w', b: 'MOWE', c: 10 }, 'series wire form');
 deq(wire[3].r, { f: 'y', x: '2030-12-31' }, 'until wire form');
 ok(!('D' in wire[0]) && !('a' in wire[0]), 'defaults omitted');
+deq(Object.keys(wire[4]), ['t', 'd', 's', 'e', 'l', 'g', 'u'], 'D wire keys in order: g after l');
+eq(encodeFragment({ events: [D], tz: TZ }), D_FRAGMENT, 'pinned fragment for D');
+ok(!('g' in wire[0]), 'no g without a position');
+{
+  const pos = decodeFragment(link([{ t: 'x', d: '2026-01-01', a: 1, g: '48.137154,11.576124' }]));
+  eq(pos.status === 'ok' && pos.events[0].geo, '48.137154,11.576124', 'canonical g decodes');
+}
+// g must be canonical on the wire: these would all pass after normalization, so fromWire refuses them first
+for (const g of ['48.1370,11.576', '48.137, 11.576', 'geo:48.137,11.576', '48.1371544,11.576',
+  'https://www.openstreetmap.org/?mlat=48.137&mlon=11.576', '-0,11.5', '91,0', '48.137;11.576', '']) {
+  const r = decodeFragment(link([{ t: 'x', d: '2026-01-01', a: 1, g }]));
+  ok(r.status === 'error' && r.detail === '#0:g', `non-canonical g refused: ${JSON.stringify(g)} → ${JSON.stringify(r)}`);
+}
+for (const g of [48.137, null, ['48.1', '11.5']]) {
+  const r = decodeFragment(link([{ t: 'x', d: '2026-01-01', a: 1, g }]));
+  ok(r.status === 'error' && r.detail === '#0:type', `g of the wrong type refused: ${JSON.stringify(g)}`);
+}
 
 // refusals
 deq(decodeFragment(''), { status: 'empty' }, 'empty string');

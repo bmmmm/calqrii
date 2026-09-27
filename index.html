@@ -149,6 +149,13 @@
 
     <label for="f-location" data-i18n="f_location">Location</label>
     <input id="f-location" name="location">
+    <div class="field-links">
+      <a id="osm-search" href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer" data-i18n="osm_search">Search on OpenStreetMap</a>
+    </div>
+    <!-- Plain text on purpose: inputmode="decimal" has no minus, comma or letters on iOS, so links and "lat, lon" could not be typed. -->
+    <label for="f-geo" data-i18n="f_geo">Map position</label>
+    <input id="f-geo" name="geo" spellcheck="false" autocapitalize="off" aria-describedby="f-geo-hint">
+    <p class="note" id="f-geo-hint" data-i18n="f_geo_hint">Paste an OpenStreetMap link, a geo: URI or "lat, lon".</p>
     <label for="f-desc" data-i18n="f_description">Description</label>
     <textarea id="f-desc" name="description" rows="3"></textarea>
     <label for="f-url" data-i18n="f_url">Link</label>
@@ -206,7 +213,7 @@
       <h3 class="ev-title"></h3>
       <p class="ev-when"></p>
       <p class="ev-rec"></p>
-      <p class="ev-where"></p>
+      <p class="ev-where"><span class="where-text"></span> <a class="where-map" target="_blank" rel="noopener noreferrer" hidden></a></p>
       <div class="qr-panel" data-qr-panel></div>
       <div class="ev-actions">
         <button type="button" data-ev="edit"></button>
@@ -240,7 +247,7 @@
       </div>
       <p class="view-when"></p>
       <p class="view-rec"></p>
-      <p class="view-where"></p>
+      <p class="view-where"><span class="where-text"></span> <a class="where-map" target="_blank" rel="noopener noreferrer" hidden></a></p>
       <p class="view-desc"></p>
       <p class="view-url"><a target="_blank" rel="noopener noreferrer"></a></p>
       <div class="actions">

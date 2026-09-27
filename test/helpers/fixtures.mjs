@@ -32,6 +32,17 @@ export const C = newEvent({
   recurrence: { freq: 'weekly', interval: 1, byDay: ['MO', 'WE'], count: 10, until: null },
 });
 
+// D carries a map position and a URL on purpose: the fixture pins GEO between LOCATION and URL.
+export const D = newEvent({
+  title: 'Stadtführung Marienplatz',
+  date: '2026-10-10',
+  startTime: '14:00',
+  endTime: '16:00',
+  location: 'Marienplatz 1, 80331 München',
+  geo: '48.137154,11.576124',
+  url: 'https://ex.org/fuehrung',
+});
+
 const ics = (lines) => lines.join('\r\n') + '\r\n';
 const HEAD = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//calqrii//calqrii//EN'];
 
@@ -71,11 +82,26 @@ export const C_VEVENT = [
   'END:VEVENT',
 ];
 
+export const D_VEVENT = [
+  'BEGIN:VEVENT',
+  'UID:36d83bbefaf9ceb0@calqrii',
+  'DTSTAMP:20260927T120000Z',
+  'DTSTART:20261010T120000Z',
+  'DTEND:20261010T140000Z',
+  'SUMMARY:Stadtführung Marienplatz',
+  String.raw`LOCATION:Marienplatz 1\, 80331 München`,
+  'GEO:48.137154;11.576124',
+  'URL:https://ex.org/fuehrung',
+  'END:VEVENT',
+];
+
 export const A_ICS = ics([...HEAD, ...A_VEVENT, 'END:VCALENDAR']);
+export const D_ICS = ics([...HEAD, ...D_VEVENT, 'END:VCALENDAR']);
 export const B_ICS = ics([...HEAD, ...B_VEVENT, 'END:VCALENDAR']);
 export const C_ICS = ics([...HEAD, ...C_VEVENT, 'END:VCALENDAR']);
 export const ABC_ICS = ics([...HEAD, ...A_VEVENT, ...B_VEVENT, ...C_VEVENT, 'END:VCALENDAR']);
 
 export const B_FRAGMENT = 'v=1&tz=Europe%2FBerlin&e=W3sidCI6IkjDvHR0ZW53b2NoZW5lbmRlIiwiZCI6IjIwMjYtMTAtMTciLCJEIjoiMjAyNi0xMC0xOCIsImEiOjEsImwiOiJCZXJnaMO8dHRlIGFtIEJydW5uc3RlaW4ifV0';
+export const D_FRAGMENT = 'v=1&tz=Europe%2FBerlin&e=W3sidCI6IlN0YWR0ZsO8aHJ1bmcgTWFyaWVucGxhdHoiLCJkIjoiMjAyNi0xMC0xMCIsInMiOiIxNDowMCIsImUiOiIxNjowMCIsImwiOiJNYXJpZW5wbGF0eiAxLCA4MDMzMSBNw7xuY2hlbiIsImciOiI0OC4xMzcxNTQsMTEuNTc2MTI0IiwidSI6Imh0dHBzOi8vZXgub3JnL2Z1ZWhydW5nIn1d';
 // The public copy's base; shipped code never hard-codes it (the page is self-hostable), fixtures may.
 export const PAGES_BASE = 'https://bmmmm.github.io/calqrii/';

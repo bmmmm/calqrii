@@ -165,6 +165,9 @@ legend { font-size: 0.9rem; padding: 0; margin-bottom: 2px; }
   border-radius: 4px;
 }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.field-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 0.9rem; }
+.field-links a, .where-map { color: var(--accent); }
+.where-map { margin-left: 4px; }
 
 button {
   padding: 8px 14px;

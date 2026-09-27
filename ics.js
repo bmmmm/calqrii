@@ -2,7 +2,7 @@
 // UID, CRLF line ends, 75-octet folding. Pure functions over normalized
 // events (see model.js); the app passes `now` once per session and the
 // time zone the times were entered in.
-import { addDays } from './model.js';
+import { addDays, isGeo } from './model.js';
 
 export const PRODID = '-//calqrii//calqrii//EN';
 const MAX_LINE_OCTETS = 75;
@@ -120,9 +120,15 @@ function urlValue(url) {
   return /^https?:\/\//.test(clean) ? clean : '';
 }
 
+/** GEO value (§3.8.1.6): two FLOATs joined by ';'. '' unless canonical — guards unvalidated input. */
+function geoValue(geo) {
+  return isGeo(geo) ? geo.replace(',', ';') : '';
+}
+
 /**
- * The unfolded property lines DTSTART … RRULE. They are what the UID hashes,
- * so their order is part of the format.
+ * The unfolded property lines DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION,
+ * GEO, URL, RRULE. They are what the UID hashes, so their order is part of
+ * the format.
  */
 export function contentLines(ev, { tz }) {
   const lines = [];
@@ -149,6 +155,8 @@ export function contentLines(ev, { tz }) {
   lines.push(`SUMMARY:${escapeText(ev.title)}`);
   if (ev.description !== '') lines.push(`DESCRIPTION:${escapeText(ev.description)}`);
   if (ev.location !== '') lines.push(`LOCATION:${escapeText(ev.location)}`);
+  const geo = geoValue(ev.geo);
+  if (geo) lines.push(`GEO:${geo}`);
   const url = urlValue(ev.url);
   if (url) lines.push(`URL:${url}`);
   const rrule = formatRrule(ev.recurrence, { allDay: ev.allDay });

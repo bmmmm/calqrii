@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   newEvent, normalizeEvent, validateEvent, expandDraft, isValidDate, isValidTime, addDays, weekdayOf, compareDates, LIMITS,
   DURATIONS, DEFAULT_DURATION, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
-  presetRule, recurrencePreset,
+  presetRule, recurrencePreset, isGeo, parseGeo, osmMapUrl, osmSearchUrl,
 } from '../model.js';
 import { STR } from '../i18n.js';
 
@@ -96,7 +96,7 @@ const none = normalizeEvent({ title: 't', date: '2026-10-05', recurrence: { freq
 deq(none.recurrence, { freq: 'none', interval: 1, byDay: [], count: null, until: null }, 'none resets the rule');
 deq(normalizeEvent({ title: 't', date: '2026-10-05', recurrence: { freq: 'monthly', byDay: ['MO'] } }).recurrence.byDay, [], 'byDay only for weekly');
 eq(newEvent().id, 0, 'newEvent id defaults to 0');
-deq(Object.keys(newEvent()).sort(), ['allDay', 'date', 'description', 'endDate', 'endTime', 'id', 'location', 'recurrence', 'startTime', 'title', 'url'], 'event shape');
+deq(Object.keys(newEvent()).sort(), ['allDay', 'date', 'description', 'endDate', 'endTime', 'geo', 'id', 'location', 'recurrence', 'startTime', 'title', 'url'], 'event shape');
 
 // recurrence presets
 const ruleOf = (o) => newEvent({ ...base, ...rec(o) }).recurrence;
@@ -118,6 +118,65 @@ eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['MO', 'WE'] }), D), 'custom
 eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['TU'] }), D), 'custom', 'weekly on another day is custom');
 eq(recurrencePreset(ruleOf({ freq: 'weekly', byDay: ['MO'] }), ''), 'custom', 'weekly without a date is custom');
 eq(recurrencePreset(ruleOf({ freq: 'yearly', count: 5 }), D), 'yearly', 'an end never forces custom');
+
+// map position: parseGeo accepts
+const M = '48.137154,11.576124';
+const accepted = [
+  ['48.137154, 11.576124', M, 'lat, lon'],
+  [M, M, 'canonical is a fixed point'],
+  ['48.137154 11.576124', M, 'space separated'],
+  ['  -33.8688 ,  151.2093 ', '-33.8688,151.2093', 'negative, padded'],
+  ['+48.1, +11.5', '48.1,11.5', 'plus signs dropped'],
+  ['48.13715449, 11.57612451', '48.137154,11.576125', 'rounded to 6 decimals'],
+  ['48.10000, 11.50', '48.1,11.5', 'trailing zeros dropped'],
+  ['0.0000004,-0.0000004', '0,0', 'rounds to zero without -0'],
+  ['geo:48.137154,11.576124', M, 'geo URI'],
+  ['GEO:48.137154,11.576124;u=35', M, 'geo URI, upper case, uncertainty ignored'],
+  ['geo:48.2,16.3,183', '48.2,16.3', 'geo URI altitude dropped'],
+  ['geo:48.2,16.3;crs=wgs84;u=10', '48.2,16.3', 'geo URI crs=wgs84'],
+  ['geo:48.2,16.3?z=17', '48.2,16.3', 'geo URI with a zoom query'],
+  ['geo:0,0?q=48.137,11.576(Marienplatz)', '48.137,11.576', 'Android geo:0,0?q=pair(label) takes the pair'],
+  ['https://www.openstreetmap.org/?mlat=48.1371540&mlon=11.5761240#map=17/48.13715/11.57612', M, 'OSM marker beats #map'],
+  ['https://www.openstreetmap.org/#map=17/48.13715/11.57612', '48.13715,11.57612', 'OSM #map'],
+  ['https://www.openstreetmap.org/#map=17/48.13715/11.57612&layers=N', '48.13715,11.57612', 'OSM #map with layers'],
+  ['https://osm.org/?mlat=1&mlon=2', '1,2', 'osm.org short host'],
+  ['https://www.google.com/maps/@48.1373932,11.5732598,17z', '48.137393,11.57326', 'Google @center'],
+  ['https://www.google.de/maps/place/Marienplatz/@48.1373932,11.5732598,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d48.1373932!4d11.5754485', '48.137393,11.575449', 'Google place pin beats @center'],
+  ['https://maps.google.com/?q=48.137,11.576', '48.137,11.576', 'Google q='],
+  ['https://www.google.com/maps?ll=48.137,11.576&z=17', '48.137,11.576', 'Google ll='],
+  ['https://www.google.com/maps/search/?api=1&query=48.137%2C11.576', '48.137,11.576', 'Google api=1 query'],
+  ['https://maps.apple.com/?ll=48.137,11.576&q=Marienplatz', '48.137,11.576', 'Apple ll='],
+  ['90.0000004, 0', '90,0', 'range checked after rounding'],
+];
+for (const [input, want, m] of accepted) eq(parseGeo(input), want, `parseGeo: ${m}`);
+for (const [, g] of accepted) {
+  ok(parseGeo(g) === g && isGeo(g) && parseGeo(osmMapUrl(g)) === g, `canonical ${g} is a fixed point, valid, and round-trips through the map link`);
+}
+// parseGeo rejects
+for (const bad of ['', 'Marienplatz', '91, 0', '0, 180.5', '90.0000006, 0', '48,137154 11,576124', '48.1', '48.1, 11.5, 3',
+  'geo:48.1', 'geo:1,2,3,4', 'geo:48.1,11.5;crs=utm', 'geo:0,0?q=Marienplatz',
+  'https://example.com/?mlat=1&mlon=2', 'https://www.google.com/maps/@120.5,45.2,17z', 'https://maps.app.goo.gl/abc',
+  'https://www.openstreetmap.org/#map=17/95/11', 'https://www.openstreetmap.org/?mlat=48.1#map=17/48/11',
+  'https://www.google.com/maps?q=Marienplatz', 'https://www.openstreetmap.org/node/123',
+  '1e1, 5', 'NaN, 0', 'Infinity, 0', '0x10, 5', 'javascript:alert(1)', null, 48.1, 'http://' + 'a'.repeat(5000)]) {
+  eq(parseGeo(bad), null, `parseGeo rejects ${JSON.stringify(bad).slice(0, 60)}`);
+}
+// isGeo is the strict canonical check
+for (const g of ['-90,-180', '90,180', '0,0', M]) ok(isGeo(g), `isGeo accepts ${g}`);
+for (const g of ['-0,5', '0,-0', '48.1370,11', '048,1', '48.1371544,11', '48, 11', '48.137154;11.576124', '90.000001,0', '0,180.000001', '+48,11', 48, null]) {
+  ok(!isGeo(g), `isGeo rejects ${JSON.stringify(g)}`);
+}
+eq(osmMapUrl(M), 'https://www.openstreetmap.org/?mlat=48.137154&mlon=11.576124#map=17/48.137154/11.576124', 'map link with marker');
+eq(osmMapUrl('x'), '', 'no map link for junk');
+eq(osmSearchUrl('Café & Bar, Münchner Freiheit 1'), 'https://www.openstreetmap.org/search?query=Caf%C3%A9%20%26%20Bar%2C%20M%C3%BCnchner%20Freiheit%201', 'search link encodes the text');
+eq(osmSearchUrl('  '), 'https://www.openstreetmap.org/', 'blank text links to the site');
+// geo in the model
+eq(newEvent({ geo: 'geo:48.1,11.5' }).geo, '48.1,11.5', 'normalize canonicalizes a parseable position');
+eq(newEvent({ geo: 'Marienplatz' }).geo, 'Marienplatz', 'unparseable input survives normalization');
+has({ geo: 'Marienplatz' }, 'err_geo_invalid'); has({ geo: '91,0' }, 'err_geo_invalid');
+lacks({ geo: '' }, 'err_geo_invalid'); lacks({ geo: '48.1,11.5' }, 'err_geo_invalid');
+eq(newEvent().geo, '', 'geo defaults to empty');
+ok(validateEvent({ ...newEvent(base), geo: '48.10,11.5' }).includes('err_geo_invalid'), 'validation is strict on a raw non-canonical value');
 
 // expandDraft
 const draft = newEvent({ title: 'T', startTime: '09:00', endTime: '10:00', date: '2026-10-05' });
@@ -144,7 +203,7 @@ for (const k of en) eq(typeof STR.en[k], typeof STR.de[k], `same type for ${k}`)
 ok(en.length > 60, 'string table is populated');
 for (const k of ['err_title_required', 'err_too_long', 'err_date_invalid', 'err_time_required', 'err_time_invalid', 'err_end_time_required',
   'err_end_before_start', 'err_url_invalid', 'err_interval', 'err_count', 'err_until_before_start', 'err_count_and_until',
-  'err_byday_empty', 'err_byday_start', 'err_each_repeat']) {
+  'err_byday_empty', 'err_byday_start', 'err_each_repeat', 'err_geo_invalid']) {
   ok(typeof STR.en[k] === 'string' && typeof STR.de[k] === 'string', `error key ${k} translated`);
 }
 eq(STR.de.rec_summary({ freq: 'weekly', interval: 1, byDay: ['MO', 'WE'], count: 10, until: null }, STR.de.weekday_codes), 'Jede Woche, am Mo, Mi, 10-mal', 'de summary');

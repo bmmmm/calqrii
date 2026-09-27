@@ -1,14 +1,14 @@
 // Share-link codec: '#v=1&tz=<zone>&e=<base64url(JSON array)>'. The page
 // never writes this to the address bar; it only builds the link on request
 // and reads one on load. Decoding is all-or-nothing: any doubt → bad_link.
-import { newEvent, validateEvent, LIMITS } from './model.js';
+import { newEvent, validateEvent, isGeo, LIMITS } from './model.js';
 
 export const LINK_VERSION = '1';
 const MAX_E_LENGTH = 100000;
 const FREQ_CODE = { daily: 'd', weekly: 'w', monthly: 'm', yearly: 'y' };
 const CODE_FREQ = { d: 'daily', w: 'weekly', m: 'monthly', y: 'yearly' };
 // Wire keys in emission order; the order is part of the format.
-const KEY_TYPES = { t: 'string', d: 'string', D: 'string', a: 'number', s: 'string', e: 'string', l: 'string', n: 'string', u: 'string', r: 'object' };
+const KEY_TYPES = { t: 'string', d: 'string', D: 'string', a: 'number', s: 'string', e: 'string', l: 'string', g: 'string', n: 'string', u: 'string', r: 'object' };
 const REC_KEYS = ['f', 'i', 'b', 'c', 'x'];
 
 export function bytesToB64url(u8) {
@@ -32,6 +32,7 @@ function toWire(ev) {
   if (ev.startTime) w.s = ev.startTime;
   if (ev.endTime) w.e = ev.endTime;
   if (ev.location) w.l = ev.location;
+  if (ev.geo) w.g = ev.geo;
   if (ev.description) w.n = ev.description;
   if (ev.url) w.u = ev.url;
   const r = ev.recurrence;
@@ -80,6 +81,8 @@ function fromWire(w) {
   }
   if (!('t' in w) || !('d' in w)) return { error: 'missing' };
   if ('a' in w && w.a !== 1) return { error: 'a' };
+  // Strict: normalizeEvent would canonicalize '48.1370,11.5' and let it through.
+  if ('g' in w && !isGeo(w.g)) return { error: 'g' };
   let recurrence;
   if ('r' in w) {
     const r = w.r;
@@ -108,6 +111,7 @@ function fromWire(w) {
     location: 'l' in w ? w.l : '',
     description: 'n' in w ? w.n : '',
     url: 'u' in w ? w.u : '',
+    geo: 'g' in w ? w.g : '',
     recurrence,
   });
   return { event };

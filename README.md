@@ -16,6 +16,11 @@ two payloads, chosen above the event list:
   "Add to calendar" (an `.ics` file), "Show QR" (the offline code, to pass
   on) and "Edit these events". A copied share link opens the same view.
 
+A map position — a pasted OpenStreetMap, Google Maps or Apple Maps link, a
+`geo:` URI, or plain "lat, lon" — becomes a `GEO` property in the calendar
+data and a "Map" link on the event; "Search on OpenStreetMap" opens the
+location text on openstreetmap.org to find it.
+
 An option puts all events into a single code. As calendar data it is
 experimental: scanner libraries such as ZXing read only the first event from
 such a code, and phone cameras are untested. As a link it carries every event
@@ -34,7 +39,10 @@ nothing; the phone that scans it requests this page from its host (for the
 public copy, GitHub Pages sees an ordinary page request and the IP address,
 never the events, which stay in the fragment and are decoded on the phone).
 In the view the tab title — and so the history entry — shows the first
-event's title.
+event's title. The "Search on OpenStreetMap" and "Map" links are ordinary
+links: they open openstreetmap.org in a new tab with the location text or the
+coordinates in the address, without a referrer, and only when you follow
+them.
 
 ## Date rules
 

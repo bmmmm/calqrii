@@ -61,7 +61,10 @@ Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
   `app.js` must exist in `STR.en` (§9).
 - In JS literals `'\;'` is just `;`. Escaping code and fixtures need the
   backslash doubled (`'\\;'`) or `String.raw`.
-- The VEVENT property order feeds the UID hash; reordering changes every UID.
+- The VEVENT property order (DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION,
+  GEO, URL, RRULE) feeds the UID hash; reordering changes every UID. GEO
+  appears only for events with a map position, so their UIDs alone change
+  when the position changes.
 - Timed recurring events are serialized floating (no `Z`); single timed
   events in UTC. Changing that changes what scanners import across DST.
 

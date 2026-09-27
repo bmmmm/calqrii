@@ -6,7 +6,7 @@
  *   byDay:Weekday[], count:number|null, until:string|null }} Recurrence */
 /** @typedef {{ id:number, title:string, allDay:boolean, date:string, endDate:string,
  *   startTime:string, endTime:string, description:string, location:string, url:string,
- *   recurrence:Recurrence }} CalEvent */
+ *   geo:string, recurrence:Recurrence }} CalEvent */
 
 export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 export const FREQS = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
@@ -15,6 +15,10 @@ export const LIMITS = { title: 200, location: 200, description: 1000, url: 500, 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const URL_RE = /^https?:\/\/\S+$/;
+// Canonical 'lat,lon': ≤ 6 decimals, no trailing zeros, no leading zeros, no '+', no '-0'.
+const GEO_NUM = String.raw`-?(?:0|[1-9]\d{0,2})(?:\.\d{0,5}[1-9])?`;
+export const GEO_RE = new RegExp(String.raw`^(?!-0,)${GEO_NUM},(?!-0$)${GEO_NUM}$`);
+const GEO_INPUT_MAX = 4096; // bounds parser work on pasted map URLs; not a stored-field limit
 
 export function isValidDate(s) {
   const m = typeof s === 'string' ? DATE_RE.exec(s) : null;
@@ -107,6 +111,94 @@ export function durationOption(ev, current) {
   return DURATIONS.includes(span) ? String(span) : 'custom';
 }
 
+// --- map position: pasted map links, geo: URIs or "lat, lon" become one canonical 'lat,lon'
+
+const NUM = String.raw`[+-]?\d{1,3}(?:\.\d+)?`; // no exponents, no leading-dot forms
+const PAIR_RE = new RegExp(`^(${NUM})\\s*(?:,|\\s)\\s*(${NUM})$`);
+const GEO_URI_RE = new RegExp(`^geo:(${NUM}),(${NUM})(?:,${NUM})?((?:;[^?]*)?)(?:\\?(.*))?$`, 'i');
+const AT_RE = new RegExp(`/@(${NUM}),(${NUM})(?:,|/|$)`);
+const PIN_RE = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/; // the place pin in a Google Maps data= segment
+const OSM_HOSTS = new Set(['openstreetmap.org', 'www.openstreetmap.org', 'osm.org', 'www.osm.org']);
+const GOOGLE_HOST_RE = /^(?:www\.|maps\.)?google\.(?:[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})$/;
+
+/** Rounded to 6 decimals, range-checked after rounding, formatted without trailing zeros or '-0'. */
+function pairFrom(lat, lon) {
+  const la = Number(Number(lat).toFixed(6));
+  const lo = Number(Number(lon).toFixed(6));
+  if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+  return `${String(la)},${String(lo)}`;
+}
+
+function pairFromText(text) {
+  const m = text === null ? null : PAIR_RE.exec(text.trim());
+  return m ? pairFrom(m[1], m[2]) : null;
+}
+
+/** True for the canonical 'lat,lon' form within ±90 / ±180 — what the model stores and the wire carries. */
+export function isGeo(s) {
+  if (typeof s !== 'string' || !GEO_RE.test(s)) return false;
+  const [lat, lon] = s.split(',').map(Number);
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
+/**
+ * Canonical 'lat,lon' for a pasted "lat, lon" pair, a geo: URI (RFC 5870; a
+ * q= pair wins over the coordinates, so Android's geo:0,0?q=… never becomes
+ * 0,0), an OpenStreetMap link (marker mlat/mlon, else #map=z/lat/lon), a
+ * Google Maps link (place pin, then q/ll/query, then @lat,lon) or an Apple
+ * Maps ll=; null for anything else. Never swaps latitude and longitude.
+ */
+export function parseGeo(input) {
+  if (typeof input !== 'string') return null;
+  const s = input.trim();
+  if (s === '' || s.length > GEO_INPUT_MAX) return null;
+  if (/^geo:/i.test(s)) {
+    const m = GEO_URI_RE.exec(s);
+    if (!m) return null;
+    const crs = /;crs=([^;]+)/i.exec(m[3] || '');
+    if (crs && crs[1].toLowerCase() !== 'wgs84') return null;
+    if (m[4] !== undefined) {
+      const q = new URLSearchParams(m[4]).get('q');
+      if (q !== null) return pairFromText(q.replace(/\(.*\)$/, ''));
+    }
+    return pairFrom(m[1], m[2]);
+  }
+  if (/^https?:\/\//i.test(s)) {
+    let u;
+    try { u = new URL(s); } catch { return null; }
+    const host = u.hostname.toLowerCase();
+    const p = u.searchParams;
+    if (OSM_HOSTS.has(host)) {
+      if (p.has('mlat') || p.has('mlon')) return p.has('mlat') && p.has('mlon') ? pairFrom(p.get('mlat'), p.get('mlon')) : null;
+      const parts = (new URLSearchParams(u.hash.slice(1)).get('map') || '').split('/');
+      return parts.length === 3 ? pairFrom(parts[1], parts[2]) : null;
+    }
+    if (GOOGLE_HOST_RE.test(host)) {
+      const pin = PIN_RE.exec(u.pathname);
+      if (pin) return pairFrom(pin[1], pin[2]);
+      for (const key of ['q', 'll', 'query']) if (p.has(key)) return pairFromText(p.get(key));
+      const at = AT_RE.exec(u.pathname);
+      return at ? pairFrom(at[1], at[2]) : null;
+    }
+    if (host === 'maps.apple.com') return pairFromText(p.get('ll'));
+    return null;
+  }
+  return pairFromText(s);
+}
+
+/** OpenStreetMap with a marker at the position; '' unless `geo` is canonical. */
+export function osmMapUrl(geo) {
+  if (!isGeo(geo)) return '';
+  const [lat, lon] = geo.split(',');
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
+}
+
+/** OpenStreetMap's search for a location text; the plain site when the text is blank. */
+export function osmSearchUrl(text) {
+  const q = String(text).trim();
+  return q === '' ? 'https://www.openstreetmap.org/' : `https://www.openstreetmap.org/search?query=${encodeURIComponent(q)}`;
+}
+
 const str = (v) => (typeof v === 'string' ? v : '').normalize('NFC').trim();
 
 export function normalizeEvent(ev) {
@@ -129,6 +221,7 @@ export function normalizeEvent(ev) {
     description: str(src.description),
     location: str(src.location),
     url: str(src.url),
+    geo: parseGeo(str(src.geo)) ?? str(src.geo), // unparseable input survives so validateEvent can flag it
     recurrence: {
       freq,
       interval: freq === 'none' ? 1 : num(rec.interval, 1),
@@ -161,6 +254,7 @@ export function newEvent(partial = {}) {
     description: '',
     location: '',
     url: '',
+    geo: '',
     ...partial,
     recurrence: { freq: 'none', interval: 1, byDay: [], count: null, until: null, ...(partial.recurrence || {}) },
   });
@@ -193,6 +287,7 @@ export function validateEvent(ev) {
     }
   }
   if (ev.url !== '' && !URL_RE.test(ev.url)) errs.add('err_url_invalid');
+  if (ev.geo !== '' && !isGeo(ev.geo)) errs.add('err_geo_invalid');
   const rec = ev.recurrence;
   if (rec.freq !== 'none') {
     if (!Number.isInteger(rec.interval) || rec.interval < 1 || rec.interval > 99) errs.add('err_interval');
