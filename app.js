@@ -56,6 +56,7 @@ function applyLang(code) {
     if (typeof s === 'string') el.textContent = s;
   }
   for (const el of document.querySelectorAll('[data-wd]')) el.textContent = t().weekdays_short[Number(el.dataset.wd)];
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t()[el.dataset.i18nAria]);
   $('lang-en').setAttribute('aria-pressed', String(lang === 'en'));
   $('lang-de').setAttribute('aria-pressed', String(lang === 'de'));
   $('lang-nav').setAttribute('aria-label', t().language);
@@ -159,8 +160,6 @@ function eachMode() {
 function syncDatesFromSelection() {
   const days = selectedDays();
   const each = eachMode();
-  els.date.disabled = each;
-  els.endDate.disabled = each;
   if (each) {
     els.date.value = '';
     els.endDate.value = '';
@@ -266,7 +265,15 @@ function deleteEvent(id) {
   if (state.editingId === id) cancelEdit();
   state.dirty = true;
   render();
-  showBanner(t().deleted, [{ label: t().undo, onClick: () => { state.events.splice(Math.min(idx, state.events.length), 0, removed); render(); } }], { timeoutMs: UNDO_MS });
+  showBanner(t().deleted, [{ label: t().undo, onClick: () => undoDelete(removed) }], { timeoutMs: UNDO_MS });
+}
+
+function undoDelete(removed) {
+  if (state.events.length >= LIMITS.events) { showBanner(t().err_too_many, [], { timeoutMs: UNDO_MS, error: true }); return; }
+  state.events.push(removed);
+  sortEvents();
+  state.dirty = true;
+  render();
 }
 
 // --- calendar
@@ -331,7 +338,10 @@ function renderEditorState() {
   const editing = state.editingId !== null;
   els.daysMode.hidden = editing || n < 2;
   document.querySelector(`input[name="days-mode"][value="${state.mode}"]`).checked = true;
-  els.save.textContent = editing ? t().save : t().add_n(eachMode() ? n : 1);
+  const each = eachMode();
+  els.date.disabled = each;
+  els.endDate.disabled = each;
+  els.save.textContent = editing ? t().save : t().add_n(each ? n : 1);
   els.cancelEdit.hidden = !editing;
   const allDay = els.allDay.checked;
   els.start.hidden = allDay;
@@ -582,8 +592,8 @@ function onQrAction(panel, act) {
   const ics = panel.querySelector('pre.ics').textContent;
   const stem = panel.dataset.stem;
   if (act === 'ics') { download(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), stem + '.ics'); return; }
-  const res = qrMemo.get(ics);
-  if (!res || res.error) return;
+  const res = qrFor(ics); // the memo may have been cleared since the panel was rendered
+  if (res.error) return;
   if (act === 'svg') download(new Blob([res.svg], { type: 'image/svg+xml' }), stem + '.svg');
   else if (act === 'png') qrPngBlob(res.qr).then((b) => download(b, stem + '.png')).catch((e) => showBanner(String(e.message || e), [], { error: true }));
 }

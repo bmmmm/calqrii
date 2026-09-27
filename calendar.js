@@ -77,6 +77,13 @@ export function renderMonth(container, opts) {
   }
   st.opts = opts;
   const { year, month, selected, marked, today, range, lang, labels, focus } = opts;
+  // A re-render replaces every node; remember what had focus so a keyboard
+  // user does not land on <body> after toggling a day or paging a month.
+  const active = document.activeElement;
+  const refocus = focus ? `[data-date="${focus}"]`
+    : container.contains(active) && active.dataset.date ? `[data-date="${active.dataset.date}"]`
+    : container.contains(active) && active.dataset.nav ? `[data-nav="${active.dataset.nav}"]`
+    : null;
   const grid = monthGrid(year, month);
   const long = new Intl.DateTimeFormat(lang, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
@@ -135,8 +142,12 @@ export function renderMonth(container, opts) {
   }
   table.append(thead, tbody);
   container.replaceChildren(nav, table);
-  if (focus) {
-    const b = container.querySelector(`[data-date="${focus}"]`);
-    if (b) b.focus();
+  const target = refocus ? container.querySelector(refocus) : null;
+  if (target) {
+    if (target.dataset.date) {
+      for (const b of container.querySelectorAll('.cal-day')) b.tabIndex = -1;
+      target.tabIndex = 0;
+    }
+    target.focus();
   }
 }

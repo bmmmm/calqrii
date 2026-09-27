@@ -42,13 +42,14 @@ Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
   against this exact algorithm and the vendored library. If an implementation
   change makes one differ, find the cause (property order, escaping, folding)
   — never re-pin blindly.
-- `qrcodegen.js` stays byte-identical to the hash in `NOTICE`; the oracle
-  test in `test/qr.test.mjs` proves it without a decoder.
+- `qrcodegen.js` stays byte-identical to the hash in `NOTICE` (check with
+  `shasum -a 256 qrcodegen.js`; no gate enforces it yet). The oracle test in
+  `test/qr.test.mjs` proves the encoder still produces the pinned symbol.
 - **Zero storage.** Never add storage APIs, network calls, writes to the
   address bar/history, HTML string sinks or external resources — the smoke
   gate greps for them and the meta CSP pins the rest.
-- In JS literals `'\;'` is just `;`. Escaping code and fixtures need `'\;'`
-  or `String.raw`.
+- In JS literals `'\;'` is just `;`. Escaping code and fixtures need the
+  backslash doubled (`'\\;'`) or `String.raw`.
 - The VEVENT property order feeds the UID hash; reordering changes every UID.
 - Timed recurring events are serialized floating (no `Z`); single timed
   events in UTC. Changing that changes what scanners import across DST.
@@ -58,6 +59,8 @@ Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js`;
 1. `npm test` green (run it — don't assume).
 2. Every new or changed check has been shown able to fail: one mutation per
    check, counted from the source, then reverted.
-3. Browser run (`BarcodeDetector` decode of every rendered QR, no CSP
-   violations, no network beyond the shipped files) green.
+3. Browser run green: `BarcodeDetector` decode of every rendered QR, no CSP
+   violations, no network beyond the shipped files. No script for it lives
+   in the repo yet; the initial build drove headless Chrome over the DevTools
+   protocol (see README "Tested scanners").
 4. README "Tested scanners" table maintained when a device test happened.

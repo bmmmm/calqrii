@@ -68,6 +68,11 @@ bad(link([{ t: 5, d: '2026-01-01' }]), 't:5');
 bad(link([{ t: '', d: '2026-01-01', a: 1 }]), 'empty title');
 bad(link([{ t: 'x', d: '2026-01-02', D: '2026-01-01', a: 1 }]), 'endDate before date');
 bad(link([{ t: 'x', d: '2026-01-01', a: 1, r: { f: 'q' } }]), 'unknown freq');
+bad(link([{ t: 'x', d: '2026-01-01', s: '09:00', r: { f: 'toString', c: 5 } }]), 'inherited property name as freq');
+bad(link([{ t: 'x', d: '2026-01-01', s: '09:00', r: { f: 'constructor' } }]), 'constructor as freq');
+// raw JSON: in an object literal __proto__ would set the prototype, not a key
+bad('v=1&tz=UTC&e=' + bytesToB64url(new TextEncoder().encode('[{"t":"x","d":"2026-01-01","a":1,"__proto__":{"x":1}}]')), '__proto__ key');
+bad(link([{ t: 'x', d: '2026-01-01', a: 1, hasOwnProperty: 'y' }]), 'inherited property name as key');
 bad(link([{ t: 'x', d: '2026-01-01', a: 1, r: { f: 'w', b: 'MOXX' } }]), 'bad byDay');
 bad(link([{ t: 'x', d: '2026-01-01', a: 1, r: { f: 'd', c: 2, x: '2027-01-01' } }]), 'count and until');
 bad(link([{ t: 'x', d: '2026-01-01', a: 1, r: [] }]), 'r as array');

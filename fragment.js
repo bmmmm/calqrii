@@ -70,7 +70,7 @@ function isValidTz(tz) {
 function fromWire(w) {
   if (!w || typeof w !== 'object' || Array.isArray(w)) return { error: 'type' };
   for (const k of Object.keys(w)) {
-    if (!(k in KEY_TYPES)) return { error: 'key' };
+    if (!Object.hasOwn(KEY_TYPES, k)) return { error: 'key' };
     if (typeof w[k] !== KEY_TYPES[k] || w[k] === null) return { error: 'type' };
   }
   if (!('t' in w) || !('d' in w)) return { error: 'missing' };
@@ -80,7 +80,7 @@ function fromWire(w) {
     const r = w.r;
     if (Array.isArray(r)) return { error: 'r' };
     for (const k of Object.keys(r)) if (!REC_KEYS.includes(k)) return { error: 'key' };
-    if (!(typeof r.f === 'string' && r.f in CODE_FREQ)) return { error: 'f' };
+    if (!(typeof r.f === 'string' && Object.hasOwn(CODE_FREQ, r.f))) return { error: 'f' };
     if ('i' in r && !Number.isInteger(r.i)) return { error: 'i' };
     if ('b' in r && !(typeof r.b === 'string' && /^(MO|TU|WE|TH|FR|SA|SU)+$/.test(r.b))) return { error: 'b' };
     if ('c' in r && !Number.isInteger(r.c)) return { error: 'c' };

@@ -51,14 +51,14 @@
       <label for="f-date" data-i18n="f_from">From</label>
       <div class="fields">
         <input type="date" id="f-date" name="date">
-        <input type="time" id="f-start" name="start" class="time" step="60">
+        <input type="time" id="f-start" name="start" class="time" step="60" data-i18n-aria="f_start_time">
       </div>
     </div>
     <div class="row">
       <label for="f-end-date" data-i18n="f_to">To</label>
       <div class="fields">
         <input type="date" id="f-end-date" name="end-date">
-        <input type="time" id="f-end" name="end" class="time" step="60">
+        <input type="time" id="f-end" name="end" class="time" step="60" data-i18n-aria="f_end_time">
       </div>
     </div>
 
@@ -92,8 +92,8 @@
       <fieldset id="f-ends">
         <legend data-i18n="f_ends">Ends</legend>
         <label class="check"><input type="radio" name="f-ends" value="never" checked> <span data-i18n="end_never">never</span></label>
-        <label class="check"><input type="radio" name="f-ends" value="count"> <span data-i18n="end_count">after</span> <input type="number" id="f-count" name="count" min="1" max="999" value="10" inputmode="numeric" class="num"> <span data-i18n="end_count_unit">times</span></label>
-        <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until"></label>
+        <label class="check"><input type="radio" name="f-ends" value="count"> <span data-i18n="end_count">after</span> <input type="number" id="f-count" name="count" min="1" max="999" value="10" inputmode="numeric" class="num" data-i18n-aria="f_count_aria"> <span data-i18n="end_count_unit">times</span></label>
+        <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until" data-i18n-aria="f_until_aria"></label>
       </fieldset>
       <p class="note" id="rep-note" data-i18n="rep_floating_note"></p>
       <p class="note" id="rep-day-note" data-i18n="rep_day_note" hidden></p>
