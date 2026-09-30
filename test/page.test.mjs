@@ -41,4 +41,8 @@ for (const c of controls) {
 ok(/id="f-geo"[^>]*aria-describedby="err-geo f-geo-hint"/.test(html), 'the geo field keeps its hint after the error slot');
 ok(/<p id="payload-meter" class="note" hidden><\/p>\s*<p id="form-error"/.test(html), 'the payload meter sits right before the form error');
 
+// navigation: "New event" buttons in both screens; "Start page" is a plain relative link (no script touches the address bar)
+ok(/<button type="button" id="view-new" data-i18n="new_event">/.test(html) && /<button type="button" id="new-event" data-i18n="new_event" hidden>/.test(html), 'a New event button in the view and under the list');
+deq([...html.matchAll(/<a id="(view-home|home-link)" class="button" href="([^"]*)"/g)].map((m) => [m[1], m[2]]), [['view-home', './'], ['home-link', './']], 'both Start page links point at the page itself');
+
 console.log(`page.test: ${checks} checks passed`);

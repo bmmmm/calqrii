@@ -32,9 +32,12 @@
     <h2 id="view-head" class="view-intro" data-i18n="view_intro">Shared via calqrii</h2>
     <ol id="view-list"></ol>
     <p class="note" data-i18n="view_add_note"></p>
+    <!-- "Start page" is a plain link to the page itself: no script touches the address bar. -->
     <div class="actions">
       <button type="button" id="view-add-all" class="primary" data-i18n="view_add_all" hidden>Add all (.ics)</button>
       <button type="button" id="view-edit" data-i18n="view_edit">Edit these events</button>
+      <button type="button" id="view-new" data-i18n="new_event">New event</button>
+      <a id="view-home" class="button" href="./" data-i18n="home">Start page</a>
     </div>
   </section>
 
@@ -205,6 +208,8 @@
     </div>
     <div class="actions">
       <button type="button" id="copy-link" class="primary" data-i18n="copy_link" disabled>Copy link</button>
+      <button type="button" id="new-event" data-i18n="new_event" hidden>New event</button>
+      <a id="home-link" class="button" href="./" data-i18n="home" hidden>Start page</a>
     </div>
     <p id="link-info" class="note"></p>
     <p id="tz-info" class="note"></p>

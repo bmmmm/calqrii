@@ -811,6 +811,8 @@ function renderShareInfo() {
   // Longer than decodeFragment accepts: the page would refuse its own link as damaged, so it is not handed out.
   const tooLong = any && (new URLSearchParams(url.slice(url.indexOf('#') + 1)).get('e') || '').length > MAX_E_LENGTH;
   els.copyLink.disabled = !any || tooLong;
+  els.newEvent.hidden = !any; // without events the form is the page; with events it may be far above
+  els.homeLink.hidden = !any;
   els.linkInfo.textContent = tooLong ? t().link_too_long
     : t().link_note + (any && url.length > LINK_LONG_CHARS ? ' ' + t().link_long : '');
   els.linkInfo.classList.toggle('warn', tooLong);
@@ -885,6 +887,14 @@ function editShared() {
   state.screen = 'editor';
   render();
   els.form.scrollIntoView({ block: 'start' });
+}
+
+/** A fresh form: drops an edit in progress, keeps the events, lands the cursor in the title. */
+function startNewEvent() {
+  state.screen = 'editor';
+  cancelEdit();
+  els.title.focus({ preventScroll: true });
+  els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function render() {
@@ -1114,6 +1124,7 @@ function main() {
     geoSearch: $('geo-search'), geoResults: $('geo-results'), geoList: $('geo-list'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
+    newEvent: $('new-event'), homeLink: $('home-link'), viewNew: $('view-new'),
     payload: $('payload'), combinedLabel: $('combined-label'), combinedNote: $('combined-note'),
     calendarSection: $('calendar-section'), eventsSection: $('events'), viewSection: $('view-section'),
     viewList: $('view-list'), viewAddAll: $('view-add-all'), viewEdit: $('view-edit'), tplViewCard: $('tpl-view-card'),
@@ -1171,6 +1182,8 @@ function main() {
   els.viewList.addEventListener('click', onPanelClick);
   els.viewAddAll.addEventListener('click', () => downloadIcs(serializeCalendar(state.events, icsOpts()), 'calqrii-all-events'));
   els.viewEdit.addEventListener('click', editShared);
+  els.viewNew.addEventListener('click', startNewEvent);
+  els.newEvent.addEventListener('click', startNewEvent);
   window.addEventListener('hashchange', onHashChange);
   window.addEventListener('afterprint', clearPrintSheet);
   window.addEventListener('beforeunload', (e) => {
