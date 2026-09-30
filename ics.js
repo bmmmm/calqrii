@@ -135,15 +135,18 @@ function locationText(ev) {
 // iOS and macOS Calendar take the map pin and travel time out of it, not out
 // of GEO (reported by library authors and seen in Apple's own exports; not yet
 // confirmed on a device here). X-TITLE must carry the LOCATION text, or the
-// map does not show. Parameter values take Apple's backslash escapes; a
-// DQUOTE is never allowed in a parameter (§3.2) and becomes an apostrophe; a
-// colon forces the RFC quoted-string form.
+// map does not show. The value takes Apple's backslash escapes unquoted —
+// the only form documented as working, and what Apple's own exports look
+// like (`\,` in nearly every address), so every parser that reads Apple
+// files tolerates it. A DQUOTE is never allowed in a parameter (§3.2) and
+// becomes an apostrophe; a `;` or `:` would end the parameter for a strict
+// parser, so such a value goes out as an RFC quoted-string.
 const APPLE_RADIUS = 100; // metres, Apple's arrival region; nothing supplies a real one
 
 function appleLocationLine(ev) {
   if (!isGeo(ev.geo)) return '';
   let title = escapeText(locationText(ev)).replace(/"/g, "'");
-  if (title.includes(':')) title = `"${title}"`;
+  if (/[;:]/.test(title)) title = `"${title}"`;
   return `X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-APPLE-RADIUS=${APPLE_RADIUS};X-TITLE=${title}:geo:${ev.geo}`;
 }
 

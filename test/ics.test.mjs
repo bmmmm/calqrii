@@ -53,7 +53,9 @@ eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'UID D');
   const apos = unfold(serializeEvent({ ...D, location: 'Café "Zentral"' }, OPTS));
   ok(apos.includes(String.raw`;X-TITLE=Café 'Zentral':geo:`), 'without a colon the value stays unquoted, the DQUOTE still becomes an apostrophe');
   const semi = unfold(serializeEvent({ ...D, location: 'Süd; Tisch 4\nHof' }, OPTS));
-  ok(semi.includes(String.raw`;X-TITLE=Süd\; Tisch 4\nHof:geo:`), 'semicolon and newline take the backslash escapes');
+  ok(semi.includes(String.raw`;X-TITLE="Süd\; Tisch 4\nHof":geo:`), 'a semicolon would end the parameter for a strict parser: quoted, escapes kept');
+  const comma = unfold(serializeEvent({ ...D, location: 'Platz 1, München' }, OPTS));
+  ok(comma.includes(String.raw`;X-TITLE=Platz 1\, München:geo:`), "a comma stays in Apple's unquoted form (the one documented as working)");
   // a position without a text: the coordinates become the LOCATION text, so Apple and every other calendar show something
   const bare = unfold(serializeEvent({ ...D, location: '' }, OPTS));
   ok(bare.includes('\r\nLOCATION:' + String.raw`48.137154\, 11.576124` + '\r\n'), 'no text → LOCATION carries "lat, lon"');

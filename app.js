@@ -270,10 +270,15 @@ function errorText(key) {
   return s || key;
 }
 
-/** The draft expanded the way submit does; under a Repeat preset the weekday picker is hidden, so its emptiness is not a field error. */
+/**
+ * The draft expanded the way submit does. Under a Repeat preset the weekday
+ * comes from the From date, so an empty weekday means a blank From date: the
+ * error is shown there (the picker is hidden), never dropped — expandDraft
+ * returned no events for it.
+ */
 function expandForm() {
   const res = expandDraft(readEditor(), selectedDays(), state.editingId !== null ? 'span' : state.mode);
-  if (els.freq.value !== 'custom') res.errors = res.errors.filter((k) => k !== 'err_byday_empty');
+  if (els.freq.value !== 'custom') res.errors = [...new Set(res.errors.map((k) => (k === 'err_byday_empty' ? 'err_date_invalid' : k)))];
   return res;
 }
 
@@ -318,9 +323,10 @@ function validateLive(active = null) {
   const marked = (f) => fieldEl(f).getAttribute('aria-invalid') === 'true';
   const visible = (f) => (state.submitted || state.touched.has(f)) && (f !== active || marked(f));
   renderFieldErrors(keys.filter((k) => (ERROR_FIELDS[k] || []).some(visible)));
-  const formLevel = keys.some((k) => !ERROR_FIELDS[k]);
-  if (!formLevel && !els.form.querySelector('[aria-invalid="true"]')) renderSummary([]);
-  else renderSummary(state.summary); // re-translate only; new keys appear on submit, not while typing
+  // The summary only ever shrinks while typing (no alert spam): a form-level key stays while it still
+  // applies, "see the fields" while a field is marked; new keys appear on the next submit.
+  const anyMarked = els.form.querySelector('[aria-invalid="true"]') !== null;
+  renderSummary(state.summary.filter((k) => (k === 'err_see_fields' ? anyMarked : k === 'err_too_many' || keys.includes(k))));
 }
 
 function clearFeedback() {
