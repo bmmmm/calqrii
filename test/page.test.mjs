@@ -2,10 +2,11 @@
 // constants they stand for. Run: node test/page.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DURATIONS, DEFAULT_DURATION, FREQS } from '../model.js';
+import { DURATIONS, DEFAULT_DURATION, FREQS, ERROR_FIELDS } from '../model.js';
 
 let checks = 0;
 const deq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
+const ok = (c, m) => { assert.ok(c, m); checks++; };
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
 
@@ -27,5 +28,17 @@ deq(dur.map((o) => attr(o, 'data-dur')).filter((v) => v !== null), DURATIONS.map
 // repeat selects
 deq(options(selectById('f-freq')).map((o) => attr(o, 'value')), [...FREQS, 'custom'], 'repeat options are FREQS plus custom');
 deq(options(selectById('f-cfreq')).map((o) => attr(o, 'value')), FREQS.filter((f) => f !== 'none'), 'custom frequencies are FREQS without none');
+
+// field errors: every field ERROR_FIELDS names is a data-field control whose aria-describedby points at one existing, hidden .field-error slot
+const controls = [...html.matchAll(/<(input|textarea|fieldset)\b([^>]*\bdata-field="([^"]+)"[^>]*)>/g)].map((m) => ({ attrs: m[2], field: m[3] }));
+deq([...new Set(controls.map((c) => c.field))].sort(), [...new Set(Object.values(ERROR_FIELDS).flat())].sort(), 'data-field controls are exactly the fields ERROR_FIELDS names');
+const slots = new Set([...html.matchAll(/<p class="field-error" id="(err-[a-z]+)" hidden><\/p>/g)].map((m) => m[1]));
+ok(slots.size >= 10, `field-error slots present (${slots.size})`);
+for (const c of controls) {
+  const tokens = (attr(c.attrs, 'aria-describedby') || '').split(/\s+/).filter((x) => x.startsWith('err-'));
+  ok(tokens.length === 1 && slots.has(tokens[0]), `${c.field} names one existing error slot (${tokens})`);
+}
+ok(/id="f-geo"[^>]*aria-describedby="err-geo f-geo-hint"/.test(html), 'the geo field keeps its hint after the error slot');
+ok(/<p id="payload-meter" class="note" hidden><\/p>\s*<p id="form-error"/.test(html), 'the payload meter sits right before the form error');
 
 console.log(`page.test: ${checks} checks passed`);

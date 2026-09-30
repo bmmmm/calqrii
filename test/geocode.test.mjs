@@ -24,14 +24,14 @@ eq(MAX_RESULTS, 5, 'five results');
 // labels
 eq(fitLabel('  Marienplatz,\tAltstadt \n München '), 'Marienplatz, Altstadt München', 'whitespace collapsed and trimmed');
 {
-  const parts = Array.from({ length: 30 }, (_, i) => `Part number ${i + 1}`);
+  const parts = Array.from({ length: 100 }, (_, i) => `Part number ${i + 1}`);
   const long = parts.join(', ');
   const fitted = fitLabel(long);
   ok([...long].length > LIMITS.location, 'input exceeds the limit');
   ok([...fitted].length <= LIMITS.location, 'fitted label fits the Location limit');
   ok(fitted.startsWith('Part number 1, ') && !fitted.endsWith(','), 'trailing parts dropped at a comma boundary');
   ok(parts.includes(fitted.split(', ').at(-1)), 'ends on a whole part');
-  eq(fitLabel('x'.repeat(250)), 'x'.repeat(LIMITS.location), 'a single oversized part is cut at the limit');
+  eq(fitLabel('x'.repeat(LIMITS.location + 50)), 'x'.repeat(LIMITS.location), 'a single oversized part is cut at the limit');
 }
 
 // results

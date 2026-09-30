@@ -46,9 +46,11 @@
 
   <form id="editor" autocomplete="off" novalidate>
     <h2 data-i18n="editor_head">Event</h2>
-    <!-- No maxlength: limits are enforced by model.js and shown as errors. -->
+    <!-- No maxlength: limits are enforced by model.js and shown as errors. Each control names its
+         model field (data-field) and, in aria-describedby, the .field-error slot its errors go to. -->
     <label for="f-title"><span data-i18n="f_title">Title</span> <small aria-hidden="true">*</small></label>
-    <input id="f-title" name="title" required>
+    <input id="f-title" name="title" required data-field="title" aria-describedby="err-title">
+    <p class="field-error" id="err-title" hidden></p>
 
     <label class="check"><input type="checkbox" id="f-allday" name="allday"> <span data-i18n="f_allday">All day</span></label>
 
@@ -61,9 +63,10 @@
     <div class="row">
       <label for="f-date" data-i18n="f_from">From</label>
       <div class="fields">
-        <input type="date" id="f-date" name="date">
-        <input type="time" id="f-start" name="start" class="time" step="60" data-i18n-aria="f_start_time">
+        <input type="date" id="f-date" name="date" data-field="date" aria-describedby="err-from">
+        <input type="time" id="f-start" name="start" class="time" step="60" data-i18n-aria="f_start_time" data-field="startTime" aria-describedby="err-from">
       </div>
+      <p class="field-error" id="err-from" hidden></p>
     </div>
     <!-- Duration is a view of start and end: the end time follows a preset, a typed end selects one or "other". -->
     <div class="row" id="dur-row">
@@ -91,9 +94,10 @@
     <div class="row">
       <label for="f-end-date" data-i18n="f_to">To</label>
       <div class="fields">
-        <input type="date" id="f-end-date" name="end-date">
-        <input type="time" id="f-end" name="end" class="time" step="60" data-i18n-aria="f_end_time">
+        <input type="date" id="f-end-date" name="end-date" data-field="endDate" aria-describedby="err-to">
+        <input type="time" id="f-end" name="end" class="time" step="60" data-i18n-aria="f_end_time" data-field="endTime" aria-describedby="err-to">
       </div>
+      <p class="field-error" id="err-to" hidden></p>
     </div>
 
     <label for="f-freq" data-i18n="f_repeat">Repeat</label>
@@ -122,11 +126,12 @@
       <div class="row">
         <label for="f-interval" data-i18n="f_interval">Every</label>
         <div class="fields">
-          <input type="number" id="f-interval" name="interval" min="1" max="99" value="1" inputmode="numeric" class="num">
+          <input type="number" id="f-interval" name="interval" min="1" max="99" value="1" inputmode="numeric" class="num" data-field="interval" aria-describedby="err-interval">
           <span id="f-interval-unit"></span>
         </div>
+        <p class="field-error" id="err-interval" hidden></p>
       </div>
-      <fieldset id="f-byday" hidden>
+      <fieldset id="f-byday" hidden data-field="byDay" aria-describedby="err-byday">
         <legend data-i18n="f_byday">On</legend>
         <label class="check day"><input type="checkbox" name="byday" value="MO"> <span data-wd="0">Mon</span></label>
         <label class="check day"><input type="checkbox" name="byday" value="TU"> <span data-wd="1">Tue</span></label>
@@ -135,20 +140,23 @@
         <label class="check day"><input type="checkbox" name="byday" value="FR"> <span data-wd="4">Fri</span></label>
         <label class="check day"><input type="checkbox" name="byday" value="SA"> <span data-wd="5">Sat</span></label>
         <label class="check day"><input type="checkbox" name="byday" value="SU"> <span data-wd="6">Sun</span></label>
+        <p class="field-error" id="err-byday" hidden></p>
       </fieldset>
       </div>
       <fieldset id="f-ends">
         <legend data-i18n="f_ends">Ends</legend>
         <label class="check"><input type="radio" name="f-ends" value="never" checked> <span data-i18n="end_never">never</span></label>
-        <label class="check"><input type="radio" name="f-ends" value="count"> <span data-i18n="end_count">after</span> <input type="number" id="f-count" name="count" min="1" max="999" value="10" inputmode="numeric" class="num" data-i18n-aria="f_count_aria"> <span data-i18n="end_count_unit">times</span></label>
-        <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until" data-i18n-aria="f_until_aria"></label>
+        <label class="check"><input type="radio" name="f-ends" value="count"> <span data-i18n="end_count">after</span> <input type="number" id="f-count" name="count" min="1" max="999" value="10" inputmode="numeric" class="num" data-i18n-aria="f_count_aria" data-field="count" aria-describedby="err-ends"> <span data-i18n="end_count_unit">times</span></label>
+        <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until" data-i18n-aria="f_until_aria" data-field="until" aria-describedby="err-ends"></label>
+        <p class="field-error" id="err-ends" hidden></p>
       </fieldset>
       <p class="note" id="rep-note" data-i18n="rep_floating_note"></p>
       <p class="note" id="rep-day-note" data-i18n="rep_day_note" hidden></p>
     </div>
 
     <label for="f-location" data-i18n="f_location">Location</label>
-    <input id="f-location" name="location">
+    <input id="f-location" name="location" data-field="location" aria-describedby="err-location">
+    <p class="field-error" id="err-location" hidden></p>
     <div class="field-links">
       <!-- The only network action of the page: asks for consent on the first click of a visit, never searches while typing. -->
       <button type="button" id="geo-search" data-i18n="geo_search">Search address (OpenStreetMap)</button>
@@ -160,13 +168,18 @@
     </div>
     <!-- Plain text on purpose: inputmode="decimal" has no minus, comma or letters on iOS, so links and "lat, lon" could not be typed. -->
     <label for="f-geo" data-i18n="f_geo">Map position</label>
-    <input id="f-geo" name="geo" spellcheck="false" autocapitalize="off" aria-describedby="f-geo-hint">
+    <input id="f-geo" name="geo" spellcheck="false" autocapitalize="off" data-field="geo" aria-describedby="err-geo f-geo-hint">
+    <p class="field-error" id="err-geo" hidden></p>
     <p class="note" id="f-geo-hint" data-i18n="f_geo_hint">Paste an OpenStreetMap link, a geo: URI or "lat, lon".</p>
     <label for="f-desc" data-i18n="f_description">Description</label>
-    <textarea id="f-desc" name="description" rows="3"></textarea>
+    <textarea id="f-desc" name="description" rows="3" data-field="description" aria-describedby="err-description"></textarea>
+    <p class="field-error" id="err-description" hidden></p>
     <label for="f-url" data-i18n="f_url">Link</label>
-    <input id="f-url" name="url" type="url" inputmode="url" spellcheck="false">
+    <input id="f-url" name="url" type="url" inputmode="url" spellcheck="false" data-field="url" aria-describedby="err-url">
+    <p class="field-error" id="err-url" hidden></p>
 
+    <!-- Live size of what the QR code would carry (app.js renderPayloadMeter); the real limit, not a character count. -->
+    <p id="payload-meter" class="note" hidden></p>
     <p id="form-error" role="alert" hidden></p>
     <div class="actions">
       <button type="submit" id="save" class="primary">Add event</button>

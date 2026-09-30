@@ -20,6 +20,13 @@ export function eccFor(bytes) {
   return bytes > LOW_ECC_ABOVE_BYTES ? 'LOW' : 'MEDIUM';
 }
 
+/** 'ok' | 'large' | 'low_ecc' | 'too_big' — the tiers encodeQr/eccFor apply, for the editor's payload meter. */
+export function sizeTier(bytes) {
+  if (bytes > HARD_LIMIT_BYTES) return 'too_big';
+  if (bytes > LOW_ECC_ABOVE_BYTES) return 'low_ecc';
+  return bytes > SOFT_LIMIT_BYTES ? 'large' : 'ok';
+}
+
 function lib() {
   const q = globalThis.qrcodegen;
   if (!q || !q.QrCode) throw new Error('qrcodegen missing');

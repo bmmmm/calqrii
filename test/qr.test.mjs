@@ -3,7 +3,7 @@
 // Run: node test/qr.test.mjs
 import assert from 'node:assert/strict';
 import './helpers/load-qrcodegen.mjs';
-import { encodeQr, eccFor, qrSvg, svgPathData, svgFromQr, utf8Length, QUIET_ZONE, HARD_LIMIT_BYTES } from '../qr.js';
+import { encodeQr, eccFor, sizeTier, qrSvg, svgPathData, svgFromQr, utf8Length, QUIET_ZONE, HARD_LIMIT_BYTES } from '../qr.js';
 import { serializeEvent, serializeCalendar } from '../ics.js';
 import { linkFor } from '../fragment.js';
 import { OPTS, A, B, C, PAGES_BASE } from './helpers/fixtures.mjs';
@@ -89,6 +89,8 @@ ok(m1200.ecc === 'M' && l1201.ecc === 'L', 'threshold flips ECC');
 ok(l1201.version < m1200.version, `L above the threshold is smaller (${l1201.version} < ${m1200.version})`);
 ok(encodeQr('x'.repeat(1201)).large && !encodeQr('x'.repeat(500)).large, 'large above 500 bytes');
 eq(utf8Length('ä🎉'), 6, 'utf8Length counts bytes');
+// the meter's tiers flip exactly where the policy does
+deq([0, 500, 501, 1200, 1201, 2953, 2954].map(sizeTier), ['ok', 'ok', 'large', 'large', 'low_ecc', 'low_ecc', 'too_big'], 'sizeTier thresholds');
 
 // 4. SVG geometry per fixture
 const RUN = /M(\d+),(\d+)h(\d+)v1h-(\d+)z/g;

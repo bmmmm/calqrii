@@ -157,6 +157,12 @@ legend { font-size: 0.9rem; padding: 0; margin-bottom: 2px; }
 #f-byday input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 #f-byday input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (forced-colors: active) { #f-byday input:checked + span { border-width: 3px; } }
+.field-error { margin: 2px 0 0; color: var(--err); font-size: 0.85rem; }
+.row > .field-error { grid-column: 2; }
+#f-byday > .field-error { flex-basis: 100%; }
+input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--err); }
+#f-byday[aria-invalid="true"] label.day span { border-color: var(--err); }
+#payload-meter { margin: 8px 0 0; }
 #form-error {
   margin: 8px 0 0;
   padding: 8px 12px;

@@ -9,12 +9,12 @@
 import { renderMonth } from './calendar.js';
 import { serializeEvent, serializeCalendar } from './ics.js';
 import { decodeFragment, linkFor } from './fragment.js';
-import { qrSvg, utf8Length, QUIET_ZONE } from './qr.js';
+import { qrSvg, utf8Length, sizeTier, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
 import { searchNominatim } from './geocode.js';
 import {
   expandDraft, normalizeEvent, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption,
-  presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, LIMITS,
+  presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, LIMITS, ERROR_FIELDS,
 } from './model.js';
 
 // One timestamp per page load: DTSTAMP must not drift between renders, or
@@ -50,6 +50,9 @@ const state = {
   geoAbort: null,
   dirty: false,
   focus: null,
+  touched: new Set(), // model fields the user has changed (blur/commit): only these show live errors
+  submitted: false, // after a failed submit every field shows its error live
+  summary: [], // keys in #form-error, kept so a language switch can re-translate them
 };
 let lang = 'en';
 const t = () => STR[lang];
@@ -176,7 +179,7 @@ function resetEditor() {
   syncOsmSearch();
   state.geoAbort?.abort();
   clearGeoResults();
-  showFormErrors([]);
+  clearFeedback();
 }
 
 /** The OpenStreetMap search link follows the Location field: a plain link, nothing is sent unless it is followed. */
@@ -234,6 +237,7 @@ function chooseGeo(r) {
   els.geo.value = r.geo;
   clearGeoResults();
   syncOsmSearch();
+  refreshDraftFeedback(); // set by script: no input event fires
 }
 
 function clearGeoResults() {
@@ -251,9 +255,105 @@ function geoErrorText(e) {
   }
 }
 
-function showFormErrors(keys) {
-  els.formError.textContent = keys.map((k) => t()[k] || k).join(' ');
+// --- validation feedback: errors at their field, a summary for the rest, the payload meter
+
+const fieldEl = (field) => els.form.querySelector(`[data-field="${field}"]`);
+const fieldOf = (target) => target.closest('[data-field]')?.dataset.field ?? null;
+const isShown = (el) => !el.disabled && el.closest('[hidden]') === null;
+/** The .field-error slot a control names in aria-describedby (the one err-* token). */
+const slotOf = (el) => $((el.getAttribute('aria-describedby') || '').split(/\s+/).find((id) => id.startsWith('err-')));
+
+/** A key's sentence; the length keys are functions of their field's limit. */
+function errorText(key) {
+  const s = t()[key];
+  if (typeof s === 'function') return s(LIMITS[ERROR_FIELDS[key][0]]);
+  return s || key;
+}
+
+/** The draft expanded the way submit does; under a Repeat preset the weekday picker is hidden, so its emptiness is not a field error. */
+function expandForm() {
+  const res = expandDraft(readEditor(), selectedDays(), state.editingId !== null ? 'span' : state.mode);
+  if (els.freq.value !== 'custom') res.errors = res.errors.filter((k) => k !== 'err_byday_empty');
+  return res;
+}
+
+/**
+ * Writes each key next to its visible field (aria-invalid + the slot) and
+ * returns the first marked control plus the keys that found no field.
+ * Slots are emptied, not just hidden: aria-describedby reads hidden text.
+ */
+function renderFieldErrors(keys) {
+  for (const p of els.form.querySelectorAll('.field-error')) { p.textContent = ''; p.hidden = true; }
+  for (const el of els.form.querySelectorAll('[data-field]')) el.removeAttribute('aria-invalid');
+  const rest = [];
+  for (const key of keys) {
+    const targets = (ERROR_FIELDS[key] || []).map(fieldEl).filter(isShown);
+    if (targets.length === 0) { rest.push(key); continue; }
+    for (const el of targets) el.setAttribute('aria-invalid', 'true');
+    const slot = slotOf(targets[0]);
+    const text = errorText(key);
+    if (!slot.textContent.includes(text)) slot.textContent = slot.textContent ? `${slot.textContent} ${text}` : text;
+    slot.hidden = false;
+  }
+  return { first: els.form.querySelector('[data-field][aria-invalid="true"]'), rest };
+}
+
+function renderSummary(keys) {
+  state.summary = keys;
+  els.formError.textContent = keys.map(errorText).join(' ');
   els.formError.hidden = keys.length === 0;
+}
+
+function focusField(el) {
+  (el.matches('fieldset') ? el.querySelector('input') : el).focus();
+}
+
+/**
+ * Live pass: only touched fields (or all, after a submit) show errors, and
+ * the field being typed in only while it is already marked — an error
+ * disappears as soon as it is fixed but never appears mid-word.
+ */
+function validateLive(active = null) {
+  const keys = expandForm().errors;
+  const marked = (f) => fieldEl(f).getAttribute('aria-invalid') === 'true';
+  const visible = (f) => (state.submitted || state.touched.has(f)) && (f !== active || marked(f));
+  renderFieldErrors(keys.filter((k) => (ERROR_FIELDS[k] || []).some(visible)));
+  const formLevel = keys.some((k) => !ERROR_FIELDS[k]);
+  if (!formLevel && !els.form.querySelector('[aria-invalid="true"]')) renderSummary([]);
+  else renderSummary(state.summary); // re-translate only; new keys appear on submit, not while typing
+}
+
+function clearFeedback() {
+  state.touched.clear();
+  state.submitted = false;
+  renderFieldErrors([]);
+  renderSummary([]);
+}
+
+/** The draft as the serializer needs it, or null while dates/times cannot be serialized (zonedToUtc throws on an invalid date). */
+function payloadMeterEvent() {
+  const ev = normalizeEvent(readEditor());
+  if (eachMode()) { const d = selectedDays()[0]; ev.date = d; ev.endDate = d; } // the copies differ only in fixed-width dates
+  const timesOk = ev.allDay || (isValidTime(ev.startTime) && (ev.endTime === '' || isValidTime(ev.endTime)));
+  return isValidDate(ev.date) && isValidDate(ev.endDate) && timesOk ? ev : null;
+}
+
+/** Bytes the QR code of this draft would carry, in the tiers qr.js applies; measures the link when the codes carry links. */
+function renderPayloadMeter() {
+  const ev = payloadMeterEvent();
+  if (!ev) { els.meter.textContent = ''; els.meter.hidden = true; return; }
+  const bytes = utf8Length(state.payload === 'link' ? eventLink(ev) : serializeEvent(ev, icsOpts()));
+  const tier = sizeTier(bytes);
+  const text = { ok: t().meter_ok, large: t().meter_large, low_ecc: t().meter_low_ecc, too_big: t().meter_too_big }[tier];
+  els.meter.textContent = text(bytes);
+  els.meter.classList.toggle('warn', tier !== 'ok');
+  els.meter.hidden = false;
+}
+
+function refreshDraftFeedback(active = null) {
+  if (els.form.hidden) return;
+  validateLive(active);
+  renderPayloadMeter();
 }
 
 function selectedDays() {
@@ -378,12 +478,16 @@ function sortEvents() {
 function submitEditor(e) {
   e.preventDefault();
   const editing = state.editingId !== null;
-  const draft = readEditor();
-  const mode = editing ? 'span' : state.mode;
-  const { events, errors } = expandDraft(draft, selectedDays(), mode);
-  if (errors.length) { showFormErrors(errors); return; }
-  if (!editing && state.events.length + events.length > LIMITS.events) { showFormErrors(['err_too_many']); return; }
-  showFormErrors([]);
+  state.submitted = true;
+  const { events, errors } = expandForm();
+  if (errors.length) {
+    const { first, rest } = renderFieldErrors(errors);
+    renderSummary(first ? [...rest, 'err_see_fields'] : rest);
+    if (first) focusField(first);
+    return;
+  }
+  if (!editing && state.events.length + events.length > LIMITS.events) { renderSummary(['err_too_many']); return; }
+  renderSummary([]);
   let firstId;
   if (editing) {
     const idx = state.events.findIndex((ev) => ev.id === state.editingId);
@@ -412,7 +516,7 @@ function editEvent(id) {
   state.selected = new Set(ev.endDate !== ev.date ? [ev.date, ev.endDate] : [ev.date]);
   state.mode = 'span';
   state.view = { year: Number(ev.date.slice(0, 4)), month: Number(ev.date.slice(5, 7)) };
-  showFormErrors([]);
+  clearFeedback();
   render();
   els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   els.title.focus();
@@ -785,6 +889,7 @@ function render() {
   renderList();
   renderCombined();
   renderShareInfo();
+  refreshDraftFeedback(); // grid clicks, date handlers, edit and a language switch all land here
 }
 
 // --- share link (fragment only; never written to the address bar)
@@ -989,7 +1094,8 @@ function main() {
     freq: $('f-freq'), cfreq: $('f-cfreq'), repOpts: $('rep-opts'), repCustom: $('rep-custom'), repSummary: $('rep-summary'),
     interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
-    location: $('f-location'), desc: $('f-desc'), url: $('f-url'), geo: $('f-geo'), osmSearch: $('osm-search'), formError: $('form-error'),
+    location: $('f-location'), desc: $('f-desc'), url: $('f-url'), geo: $('f-geo'), osmSearch: $('osm-search'),
+    formError: $('form-error'), meter: $('payload-meter'),
     geoSearch: $('geo-search'), geoResults: $('geo-results'), geoList: $('geo-list'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
@@ -1006,6 +1112,9 @@ function main() {
 
   els.clearSel.addEventListener('click', () => { state.selected.clear(); syncDatesFromSelection(); render(); });
   els.form.addEventListener('submit', submitEditor);
+  // Live feedback runs after each control's own handler (those are bound to the element, these to the form).
+  els.form.addEventListener('input', (e) => refreshDraftFeedback(fieldOf(e.target)));
+  els.form.addEventListener('change', (e) => { const f = fieldOf(e.target); if (f) state.touched.add(f); refreshDraftFeedback(); });
   els.cancelEdit.addEventListener('click', cancelEdit);
   // Unticking "All day" leaves blank times: the select keeps its preset, or shows "other" across days.
   els.allDay.addEventListener('change', () => { syncDurationSelect(); renderEditorState(); });
@@ -1033,6 +1142,7 @@ function main() {
     state.payload = e.target.value === 'link' ? 'link' : 'ics';
     renderList();
     renderCombined();
+    renderPayloadMeter();
   });
   els.copyLink.addEventListener('click', copyLink);
   els.viewList.addEventListener('click', onPanelClick);

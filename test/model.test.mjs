@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   newEvent, normalizeEvent, validateEvent, expandDraft, isValidDate, isValidTime, addDays, weekdayOf, compareDates, LIMITS,
   DURATIONS, DEFAULT_DURATION, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
-  presetRule, recurrencePreset, isGeo, parseGeo, osmMapUrl, osmSearchUrl,
+  presetRule, recurrencePreset, isGeo, parseGeo, osmMapUrl, osmSearchUrl, ERROR_FIELDS,
 } from '../model.js';
 import { STR } from '../i18n.js';
 
@@ -13,7 +13,8 @@ const eq = (a, b, m) => { assert.equal(a, b, m); checks++; };
 const deq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
 
 const base = { title: 'T', date: '2026-10-05', startTime: '09:00' };
-const errsOf = (partial) => validateEvent(newEvent({ ...base, ...partial }));
+const seenKeys = new Set(); // every key validateEvent emitted in this run, for the ERROR_FIELDS coverage check
+const errsOf = (partial) => { const e = validateEvent(newEvent({ ...base, ...partial })); e.forEach((k) => seenKeys.add(k)); return e; };
 const has = (partial, key) => ok(errsOf(partial).includes(key), `${key} for ${JSON.stringify(partial)}`);
 const lacks = (partial, key) => ok(!errsOf(partial).includes(key), `no ${key} for ${JSON.stringify(partial)}`);
 
@@ -62,11 +63,13 @@ eq(DEFAULT_DURATION, 60, 'default duration');
 // validation: valid + invalid per rule
 deq(errsOf({}), [], 'base draft is valid');
 has({ title: '' }, 'err_title_required'); lacks({ title: 'x' }, 'err_title_required');
-has({ title: 'a'.repeat(LIMITS.title + 1) }, 'err_too_long'); lacks({ title: 'ä'.repeat(LIMITS.title) }, 'err_too_long');
-has({ description: 'a'.repeat(LIMITS.description + 1) }, 'err_too_long');
-has({ date: '2026-02-30' }, 'err_date_invalid'); has({ endDate: 'nope' }, 'err_date_invalid'); lacks({}, 'err_date_invalid');
+has({ title: 'a'.repeat(LIMITS.title + 1) }, 'err_title_long'); lacks({ title: 'ä'.repeat(LIMITS.title) }, 'err_title_long');
+has({ description: 'a'.repeat(LIMITS.description + 1) }, 'err_description_long');
+has({ location: 'a'.repeat(LIMITS.location + 1) }, 'err_location_long'); lacks({ location: 'a'.repeat(LIMITS.location + 1) }, 'err_title_long');
+has({ url: 'https://' + 'a'.repeat(LIMITS.url) }, 'err_url_long'); lacks({ url: 'https://' + 'a'.repeat(LIMITS.url - 8) }, 'err_url_long');
+has({ date: '2026-02-30' }, 'err_date_invalid'); has({ endDate: 'nope' }, 'err_end_date_invalid'); lacks({ endDate: 'nope' }, 'err_date_invalid'); lacks({}, 'err_date_invalid');
 has({ startTime: '' }, 'err_time_required'); lacks({ startTime: '', allDay: true }, 'err_time_required');
-has({ startTime: '25:00' }, 'err_time_invalid'); has({ endTime: '9:0' }, 'err_time_invalid'); lacks({ endTime: '10:00' }, 'err_time_invalid');
+has({ startTime: '25:00' }, 'err_time_invalid'); has({ endTime: '9:0' }, 'err_end_time_invalid'); lacks({ endTime: '9:0' }, 'err_time_invalid'); lacks({ endTime: '10:00' }, 'err_end_time_invalid');
 has({ endDate: '2026-10-06' }, 'err_end_time_required'); lacks({ endDate: '2026-10-06', endTime: '10:00' }, 'err_end_time_required');
 lacks({ endDate: '2026-10-06', allDay: true }, 'err_end_time_required');
 has({ endDate: '2026-10-04' }, 'err_end_before_start'); has({ endTime: '08:00' }, 'err_end_before_start');
@@ -76,7 +79,7 @@ const rec = (o) => ({ recurrence: { freq: 'daily', interval: 1, byDay: [], count
 has(rec({ interval: 0 }), 'err_interval'); has(rec({ interval: 100 }), 'err_interval'); has(rec({ interval: 1.5 }), 'err_interval'); lacks(rec({ interval: 99 }), 'err_interval');
 has(rec({ count: 0 }), 'err_count'); has(rec({ count: 1000 }), 'err_count'); lacks(rec({ count: 999 }), 'err_count');
 has(rec({ until: '2026-10-04' }), 'err_until_before_start'); lacks(rec({ until: '2026-10-05' }), 'err_until_before_start');
-has(rec({ until: '2026-99-99' }), 'err_date_invalid');
+has(rec({ until: '2026-99-99' }), 'err_until_invalid'); lacks(rec({ until: '2026-99-99' }), 'err_date_invalid');
 has(rec({ count: 2, until: '2026-12-31' }), 'err_count_and_until'); lacks(rec({ count: 2 }), 'err_count_and_until');
 has(rec({ freq: 'weekly' }), 'err_byday_empty'); lacks(rec({ freq: 'weekly', byDay: ['MO'] }), 'err_byday_empty');
 has(rec({ freq: 'weekly', byDay: ['TU'] }), 'err_byday_start'); lacks(rec({ freq: 'weekly', byDay: ['TU', 'MO'] }), 'err_byday_start');
@@ -190,6 +193,8 @@ const span = expandDraft(draft, days, 'span');
 eq(span.events.length, 1, 'span → 1 event');
 eq(span.events[0].date + '/' + span.events[0].endDate, '2026-10-05/2026-10-09', 'span from min to max');
 deq(expandDraft({ ...draft, ...rec({ freq: 'daily' }) }, days, 'each').errors, ['err_each_repeat'], 'each + series refused');
+deq(expandDraft({ ...draft, title: '', ...rec({ freq: 'daily' }) }, days, 'each').errors, ['err_each_repeat', 'err_title_required'], 'each + series: the other errors show at the same time');
+deq(expandDraft({ ...draft, ...rec({ freq: 'weekly', byDay: ['MO'] }) }, days, 'each').errors, ['err_each_repeat'], 'each + weekly: the copies are checked without the rule (Wed 10-07 is not in BYDAY)');
 eq(expandDraft({ ...draft, ...rec({ freq: 'daily' }) }, days, 'span').events.length, 1, 'span + series allowed');
 eq(expandDraft(draft, ['2026-10-05'], 'each').events.length, 1, 'one day → draft as is');
 eq(expandDraft(draft, [], 'each').events.length, 1, 'no day → draft as is');
@@ -201,11 +206,20 @@ const de = Object.keys(STR.de).sort();
 deq(en, de, 'en and de have the same keys');
 for (const k of en) eq(typeof STR.en[k], typeof STR.de[k], `same type for ${k}`);
 ok(en.length > 60, 'string table is populated');
-for (const k of ['err_title_required', 'err_too_long', 'err_date_invalid', 'err_time_required', 'err_time_invalid', 'err_end_time_required',
-  'err_end_before_start', 'err_url_invalid', 'err_interval', 'err_count', 'err_until_before_start', 'err_count_and_until',
-  'err_byday_empty', 'err_byday_start', 'err_each_repeat', 'err_geo_invalid']) {
-  ok(typeof STR.en[k] === 'string' && typeof STR.de[k] === 'string', `error key ${k} translated`);
+const FORM_LEVEL = ['err_count_and_until', 'err_each_repeat', 'err_too_many', 'err_see_fields'];
+for (const k of [...Object.keys(ERROR_FIELDS), ...FORM_LEVEL]) {
+  const text = (s) => (typeof s === 'function' ? s(LIMITS[ERROR_FIELDS[k]?.[0]] ?? 1) : s);
+  ok(typeof text(STR.en[k]) === 'string' && typeof text(STR.de[k]) === 'string' && text(STR.en[k]) !== text(STR.de[k]), `error key ${k} translated in both languages`);
 }
+for (const f of ['title', 'location', 'description', 'url']) {
+  ok(STR.en[`err_${f}_long`](LIMITS[f]).includes(String(LIMITS[f])) && STR.de[`err_${f}_long`](LIMITS[f]).includes(String(LIMITS[f])), `err_${f}_long names the limit`);
+}
+// ERROR_FIELDS: every emitted key is mapped or form-level, every mapped key was exercised above, every field exists on the event
+for (const k of seenKeys) ok(k in ERROR_FIELDS || k === 'err_count_and_until', `emitted key ${k} is mapped to a field or form-level`);
+for (const k of Object.keys(ERROR_FIELDS)) ok(seenKeys.has(k), `mapped key ${k} was emitted by some check`);
+const evKeys = new Set([...Object.keys(newEvent()), ...Object.keys(newEvent().recurrence)]);
+for (const [k, fields] of Object.entries(ERROR_FIELDS)) ok(fields.length > 0 && fields.every((f) => evKeys.has(f)), `${k} names existing event fields (${fields})`);
+ok(!('err_too_long' in STR.en), 'the generic err_too_long is gone');
 eq(STR.de.rec_summary({ freq: 'weekly', interval: 1, byDay: ['MO', 'WE'], count: 10, until: null }, STR.de.weekday_codes), 'Jede Woche, am Mo, Mi, 10-mal', 'de summary');
 eq(STR.en.rec_summary({ freq: 'monthly', interval: 2, byDay: [], count: null, until: '2027-06-30' }, STR.en.weekday_codes), 'Every 2 months, until 2027-06-30', 'en summary');
 eq(STR.en.rec_summary({ freq: 'none', interval: 1, byDay: [], count: null, until: null }, {}), '', 'none summary is empty');

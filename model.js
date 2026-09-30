@@ -10,7 +10,9 @@
 
 export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 export const FREQS = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
-export const LIMITS = { title: 200, location: 200, description: 1000, url: 500, events: 200 };
+// Sanity caps (memory, share-link size), not QR limits: the QR code holds
+// 2953 bytes in total and the editor's payload meter shows that budget live.
+export const LIMITS = { title: 1000, location: 1000, description: 8000, url: 2000, events: 200 };
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -262,19 +264,38 @@ export function newEvent(partial = {}) {
 
 const cp = (s) => [...s].length;
 
+/**
+ * The event field(s) each validateEvent key is about (the form marks them);
+ * keys absent here concern the whole form. Length keys name a LIMITS key.
+ */
+export const ERROR_FIELDS = Object.freeze({
+  err_title_required: ['title'], err_title_long: ['title'],
+  err_date_invalid: ['date'], err_end_date_invalid: ['endDate'],
+  err_time_required: ['startTime'], err_time_invalid: ['startTime'],
+  err_end_time_invalid: ['endTime'], err_end_time_required: ['endTime'],
+  err_end_before_start: ['endDate', 'endTime'],
+  err_location_long: ['location'], err_description_long: ['description'],
+  err_url_long: ['url'], err_url_invalid: ['url'], err_geo_invalid: ['geo'],
+  err_interval: ['interval'], err_count: ['count'],
+  err_until_invalid: ['until'], err_until_before_start: ['until'],
+  err_byday_empty: ['byDay'], err_byday_start: ['byDay'],
+});
+
 /** Returns i18n error keys; [] means valid. Expects a normalized event. */
 export function validateEvent(ev) {
   const errs = new Set();
   if (ev.title === '') errs.add('err_title_required');
-  if (cp(ev.title) > LIMITS.title || cp(ev.location) > LIMITS.location
-    || cp(ev.description) > LIMITS.description || cp(ev.url) > LIMITS.url) errs.add('err_too_long');
+  for (const field of ['title', 'location', 'description', 'url']) {
+    if (cp(ev[field]) > LIMITS[field]) errs.add(`err_${field}_long`);
+  }
   const dateOk = isValidDate(ev.date);
   const endOk = isValidDate(ev.endDate);
-  if (!dateOk || !endOk) errs.add('err_date_invalid');
+  if (!dateOk) errs.add('err_date_invalid');
+  if (!endOk) errs.add('err_end_date_invalid');
   if (!ev.allDay) {
     if (ev.startTime === '') errs.add('err_time_required');
     else if (!isValidTime(ev.startTime)) errs.add('err_time_invalid');
-    if (ev.endTime !== '' && !isValidTime(ev.endTime)) errs.add('err_time_invalid');
+    if (ev.endTime !== '' && !isValidTime(ev.endTime)) errs.add('err_end_time_invalid');
   }
   if (dateOk && endOk) {
     const order = compareDates(ev.endDate, ev.date);
@@ -293,7 +314,7 @@ export function validateEvent(ev) {
     if (!Number.isInteger(rec.interval) || rec.interval < 1 || rec.interval > 99) errs.add('err_interval');
     if (rec.count !== null && (!Number.isInteger(rec.count) || rec.count < 1 || rec.count > 999)) errs.add('err_count');
     if (rec.until !== null) {
-      if (!isValidDate(rec.until)) errs.add('err_date_invalid');
+      if (!isValidDate(rec.until)) errs.add('err_until_invalid');
       else if (dateOk && compareDates(rec.until, ev.date) < 0) errs.add('err_until_before_start');
     }
     if (rec.count !== null && rec.until !== null) errs.add('err_count_and_until');
@@ -327,21 +348,23 @@ export function recurrencePreset(rec, date) {
 /**
  * Turns the editor draft plus the selected days into events.
  * 0–1 selected days → the draft as is; 'span' → one event from the first to
- * the last day; 'each' → one single-day copy per selected day (no series).
+ * the last day; 'each' → one single-day copy per selected day (no series: a
+ * rule adds err_each_repeat, and the copies are still checked without it so
+ * the other errors show at the same time).
  */
 export function expandDraft(draft, selectedDates, mode) {
   const days = [...new Set(selectedDates)].filter(isValidDate).sort(compareDates);
   const base = normalizeEvent(draft);
+  const errors = new Set();
   let drafts;
   if (days.length <= 1) {
     drafts = [base];
   } else if (mode === 'span') {
     drafts = [{ ...base, date: days[0], endDate: days[days.length - 1] }];
   } else {
-    if (base.recurrence.freq !== 'none') return { events: [], errors: ['err_each_repeat'] };
-    drafts = days.map((d) => ({ ...base, date: d, endDate: d }));
+    if (base.recurrence.freq !== 'none') errors.add('err_each_repeat');
+    drafts = days.map((d) => ({ ...base, date: d, endDate: d, recurrence: { freq: 'none' } }));
   }
-  const errors = new Set();
   const events = [];
   for (const d of drafts) {
     const ev = normalizeEvent(d);
