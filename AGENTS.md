@@ -73,7 +73,10 @@ static and relative (`./x.js`).
 - The VEVENT property order (DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION,
   GEO, URL, RRULE) feeds the UID hash; reordering changes every UID. GEO
   appears only for events with a map position, so their UIDs alone change
-  when the position changes.
+  when the position changes. A position without a location text synthesizes
+  `LOCATION:lat\, lon` (hashed like a typed one). The Apple line
+  `X-APPLE-STRUCTURED-LOCATION` (X-TITLE = the LOCATION text) is added in
+  `veventLines` after the hashed lines and is **not** part of the UID.
 - Timed recurring events are serialized floating (no `Z`); single timed
   events in UTC. Changing that changes what scanners import across DST.
 

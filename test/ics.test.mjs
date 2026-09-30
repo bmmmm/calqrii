@@ -28,7 +28,7 @@ eq(uidFor(C, OPTS), 'fb1bf38ddbe27857@calqrii', 'UID C');
 
 // 1b. fixture D: a map position becomes GEO between LOCATION and URL, and is part of the UID
 eq(serializeEvent(D, OPTS), D_ICS, 'fixture D');
-eq(bytes(D_ICS), 339, 'D is 339 bytes');
+eq(bytes(D_ICS), 463, 'D is 463 bytes (339 + the folded Apple location line)');
 eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'UID D');
 {
   const at = (prefix) => D_VEVENT.findIndex((l) => l.startsWith(prefix));
@@ -36,8 +36,30 @@ eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'UID D');
   eq(D_VEVENT[at('GEO:')], 'GEO:48.137154;11.576124', 'GEO joins the floats with a semicolon');
   eq(uidFor({ ...D, geo: '' }, OPTS), '40ebc0f190ee1aa2@calqrii', 'the UID changes without the position');
   const injected = serializeEvent({ ...D, geo: '48.1,11.5\r\nX-INJECTED:y' }, OPTS);
-  ok(!injected.includes('GEO') && !injected.includes('X-INJECTED'), 'a non-canonical position is dropped, never injected');
-  ok(!A_ICS.includes('GEO'), 'no GEO line without a position');
+  ok(!injected.includes('GEO') && !injected.includes('X-INJECTED') && !injected.includes('X-APPLE'), 'a non-canonical position is dropped, never injected — no GEO, no Apple line');
+  ok(!A_ICS.includes('GEO') && !A_ICS.includes('X-APPLE'), 'no GEO and no Apple line without a position');
+}
+
+// 1c. Apple's structured location: next to GEO, X-TITLE = LOCATION text, derived and therefore outside the UID hash
+{
+  const APPLE = String.raw`X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-APPLE-RADIUS=100;X-TITLE=Marienplatz 1\, 80331 München:geo:48.137154,11.576124`;
+  const dLines = unfold(D_ICS).split('\r\n');
+  eq(dLines.find((l) => l.startsWith('X-APPLE')), APPLE, 'the Apple line unfolds to X-TITLE with the escaped LOCATION text and a geo: URI');
+  eq(dLines.indexOf('END:VEVENT') - dLines.findIndex((l) => l.startsWith('X-APPLE')), 1, 'the Apple line is the last property of the VEVENT');
+  eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'the UID is the pre-Apple value: the line is not hashed');
+  ok(!contentLines(D, OPTS).some((l) => l.startsWith('X-APPLE')), 'contentLines (the hashed set) carry no Apple line');
+  const quoted = unfold(serializeEvent({ ...D, location: 'Raum 3: "Aula"' }, OPTS));
+  ok(quoted.includes(String.raw`;X-TITLE="Raum 3: 'Aula'":geo:`), 'a colon puts X-TITLE in the RFC quoted form, a DQUOTE becomes an apostrophe');
+  const apos = unfold(serializeEvent({ ...D, location: 'Café "Zentral"' }, OPTS));
+  ok(apos.includes(String.raw`;X-TITLE=Café 'Zentral':geo:`), 'without a colon the value stays unquoted, the DQUOTE still becomes an apostrophe');
+  const semi = unfold(serializeEvent({ ...D, location: 'Süd; Tisch 4\nHof' }, OPTS));
+  ok(semi.includes(String.raw`;X-TITLE=Süd\; Tisch 4\nHof:geo:`), 'semicolon and newline take the backslash escapes');
+  // a position without a text: the coordinates become the LOCATION text, so Apple and every other calendar show something
+  const bare = unfold(serializeEvent({ ...D, location: '' }, OPTS));
+  ok(bare.includes('\r\nLOCATION:' + String.raw`48.137154\, 11.576124` + '\r\n'), 'no text → LOCATION carries "lat, lon"');
+  ok(bare.includes(String.raw`;X-TITLE=48.137154\, 11.576124:geo:48.137154,11.576124`), 'no text → X-TITLE carries the same coordinates');
+  ok(uidFor({ ...D, location: '' }, OPTS) !== uidFor({ ...D, location: '', geo: '' }, OPTS), 'the synthesized LOCATION is hashed like a typed one');
+  ok(!unfold(serializeEvent({ ...D, location: '', geo: '' }, OPTS)).includes('LOCATION'), 'no text and no position → no LOCATION');
 }
 
 // 2. folding: every physical line ≤ 75 octets; continuation = one space + ≤ 74

@@ -92,6 +92,9 @@ export const D_VEVENT = [
   String.raw`LOCATION:Marienplatz 1\, 80331 München`,
   'GEO:48.137154;11.576124',
   'URL:https://ex.org/fuehrung',
+  // Apple's structured location, folded at 75 octets; X-TITLE repeats the LOCATION text. Not part of the UID.
+  'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-APPLE-RADIUS=100;X-TITLE=Marienplat',
+  String.raw` z 1\, 80331 München:geo:48.137154,11.576124`,
   'END:VEVENT',
 ];
 

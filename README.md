@@ -19,7 +19,11 @@ two payloads, chosen above the event list:
 
 A map position — a pasted OpenStreetMap, Google Maps or Apple Maps link, a
 `geo:` URI, or plain "lat, lon" — becomes a `GEO` property in the calendar
-data and a "Map" link on the event; "Search on OpenStreetMap" opens the
+data plus Apple's `X-APPLE-STRUCTURED-LOCATION` (what iOS and macOS Calendar
+read for the map pin; reported by library authors, not yet confirmed on a
+device here), and a "Map" link on the event. A position without a location
+text gets its coordinates as the location text, so every calendar shows
+something. "Search on OpenStreetMap" opens the
 location text on openstreetmap.org to find it, and "Search address
 (OpenStreetMap)" looks it up from the page (opt-in, see Privacy) and fills in
 both the address and the position.

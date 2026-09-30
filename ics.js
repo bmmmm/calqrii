@@ -125,10 +125,32 @@ function geoValue(geo) {
   return isGeo(geo) ? geo.replace(',', ';') : '';
 }
 
+/** The LOCATION text: the event's own, or "lat, lon" when it has a position but no text (every calendar shows something then). */
+function locationText(ev) {
+  if (ev.location !== '') return ev.location;
+  return isGeo(ev.geo) ? ev.geo.replace(',', ', ') : '';
+}
+
+// Apple's proprietary structured location, emitted next to the standard GEO:
+// iOS and macOS Calendar take the map pin and travel time out of it, not out
+// of GEO (reported by library authors and seen in Apple's own exports; not yet
+// confirmed on a device here). X-TITLE must carry the LOCATION text, or the
+// map does not show. Parameter values take Apple's backslash escapes; a
+// DQUOTE is never allowed in a parameter (§3.2) and becomes an apostrophe; a
+// colon forces the RFC quoted-string form.
+const APPLE_RADIUS = 100; // metres, Apple's arrival region; nothing supplies a real one
+
+function appleLocationLine(ev) {
+  if (!isGeo(ev.geo)) return '';
+  let title = escapeText(locationText(ev)).replace(/"/g, "'");
+  if (title.includes(':')) title = `"${title}"`;
+  return `X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-APPLE-RADIUS=${APPLE_RADIUS};X-TITLE=${title}:geo:${ev.geo}`;
+}
+
 /**
  * The unfolded property lines DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION,
  * GEO, URL, RRULE. They are what the UID hashes, so their order is part of
- * the format.
+ * the format. The Apple location line is derived and stays outside.
  */
 export function contentLines(ev, { tz }) {
   const lines = [];
@@ -154,7 +176,8 @@ export function contentLines(ev, { tz }) {
   }
   lines.push(`SUMMARY:${escapeText(ev.title)}`);
   if (ev.description !== '') lines.push(`DESCRIPTION:${escapeText(ev.description)}`);
-  if (ev.location !== '') lines.push(`LOCATION:${escapeText(ev.location)}`);
+  const loc = locationText(ev);
+  if (loc !== '') lines.push(`LOCATION:${escapeText(loc)}`);
   const geo = geoValue(ev.geo);
   if (geo) lines.push(`GEO:${geo}`);
   const url = urlValue(ev.url);
@@ -180,11 +203,13 @@ export function uidFor(ev, { tz }) {
 }
 
 export function veventLines(ev, { now, tz }) {
+  const apple = appleLocationLine(ev);
   return [
     'BEGIN:VEVENT',
     `UID:${uidFor(ev, { tz })}`,
     `DTSTAMP:${formatUtcDateTime(now)}`,
     ...contentLines(ev, { tz }),
+    ...(apple ? [apple] : []),
     'END:VEVENT',
   ];
 }
