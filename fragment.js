@@ -4,7 +4,7 @@
 import { newEvent, validateEvent, isGeo, LIMITS } from './model.js';
 
 export const LINK_VERSION = '1';
-const MAX_E_LENGTH = 100000;
+export const MAX_E_LENGTH = 100000; // decodeFragment refuses longer payloads; the page must not hand out such a link
 const FREQ_CODE = { daily: 'd', weekly: 'w', monthly: 'm', yearly: 'y' };
 const CODE_FREQ = { d: 'daily', w: 'weekly', m: 'monthly', y: 'yearly' };
 // Wire keys in emission order; the order is part of the format.

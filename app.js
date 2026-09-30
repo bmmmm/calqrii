@@ -8,7 +8,7 @@
 // asks for, and it lives in the #fragment.
 import { renderMonth } from './calendar.js';
 import { serializeEvent, serializeCalendar } from './ics.js';
-import { decodeFragment, linkFor } from './fragment.js';
+import { decodeFragment, linkFor, MAX_E_LENGTH } from './fragment.js';
 import { qrSvg, utf8Length, sizeTier, QUIET_ZONE } from './qr.js';
 import { STR } from './i18n.js';
 import { searchNominatim } from './geocode.js';
@@ -119,7 +119,7 @@ function readEditor() {
   // A preset stands for "every 1 unit, weekly on the start weekday"; only the
   // custom block reads its fields, so stale ticks under a preset never leak.
   const rule = custom
-    ? { interval: els.interval.value, byDay: [...els.byDay.querySelectorAll('input:checked')].map((c) => c.value) }
+    ? { interval: els.interval.value === '' ? NaN : Number(els.interval.value), byDay: [...els.byDay.querySelectorAll('input:checked')].map((c) => c.value) }
     : presetRule(freq, els.date.value);
   return {
     title: els.title.value,
@@ -801,8 +801,13 @@ function renderCombined() {
 
 function renderShareInfo() {
   const any = state.events.length > 0;
-  els.copyLink.disabled = !any;
-  els.linkInfo.textContent = t().link_note + (any && shareURL().length > LINK_LONG_CHARS ? ' ' + t().link_long : '');
+  const url = any ? shareURL() : '';
+  // Longer than decodeFragment accepts: the page would refuse its own link as damaged, so it is not handed out.
+  const tooLong = any && (new URLSearchParams(url.slice(url.indexOf('#') + 1)).get('e') || '').length > MAX_E_LENGTH;
+  els.copyLink.disabled = !any || tooLong;
+  els.linkInfo.textContent = tooLong ? t().link_too_long
+    : t().link_note + (any && url.length > LINK_LONG_CHARS ? ' ' + t().link_long : '');
+  els.linkInfo.classList.toggle('warn', tooLong);
   els.tzInfo.textContent = t().tz_note(state.tz);
 }
 
@@ -912,7 +917,11 @@ function eventLink(ev) {
 function flash(button, text) {
   button.textContent = text;
   button.disabled = true;
-  setTimeout(() => { button.textContent = t()[button.dataset.i18n]; button.disabled = false; }, 1500);
+  setTimeout(() => {
+    button.textContent = t()[button.dataset.i18n];
+    // "Copy link" gets its state back from the events (all may be deleted by now); the QR copy buttons are simply re-enabled.
+    if (button === els.copyLink) renderShareInfo(); else button.disabled = false;
+  }, 1500);
 }
 
 async function copyLink() {
@@ -1121,7 +1130,15 @@ function main() {
   els.freq.addEventListener('change', onFreqChange);
   els.cfreq.addEventListener('change', () => { ensureStartWeekday(); renderEditorState(); });
   // Interval, weekday chips, "Ends" radios, count and until all feed the summary line.
-  els.repOpts.addEventListener('input', renderEditorState);
+  // Typing into the count or until field means that ending: a click into an input inside a
+  // <label> does not activate the label's radio (HTML spec), so it is ticked here.
+  els.repOpts.addEventListener('input', (e) => {
+    if (e.target === els.count || e.target === els.until) {
+      const radio = e.target.closest('label')?.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true; // the form-level input listener re-checks the draft afterwards
+    }
+    renderEditorState();
+  });
   els.start.addEventListener('input', followStart);
   els.end.addEventListener('input', syncDurationSelect);
   els.duration.addEventListener('change', onDurationChange);

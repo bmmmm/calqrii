@@ -1,7 +1,7 @@
 // Share-link codec tests. Run: node test/fragment.test.mjs
 import assert from 'node:assert/strict';
-import { encodeFragment, decodeFragment, linkFor, bytesToB64url, b64urlToBytes, LINK_VERSION } from '../fragment.js';
-import { newEvent } from '../model.js';
+import { encodeFragment, decodeFragment, linkFor, bytesToB64url, b64urlToBytes, LINK_VERSION, MAX_E_LENGTH } from '../fragment.js';
+import { newEvent, LIMITS } from '../model.js';
 import { A, B, C, D, B_FRAGMENT, D_FRAGMENT, PAGES_BASE } from './helpers/fixtures.mjs';
 
 let checks = 0;
@@ -107,6 +107,21 @@ bad(link([{ t: 'x', d: '2026-01-01' }]), 'timed without start time');
 bad(link(Array.from({ length: 201 }, () => ({ t: 'x', d: '2026-01-01', a: 1 }))), '201 events');
 eq(decodeFragment(link(Array.from({ length: 200 }, () => ({ t: 'x', d: '2026-01-01', a: 1 })))).status, 'ok', '200 events');
 bad('v=1&tz=UTC&e=' + 'A'.repeat(100004), 'e > 100k');
+eq(MAX_E_LENGTH, 100000, 'the refusal length is exported for the page (Copy link is disabled beyond it)');
+{
+  // the boundary on an otherwise valid link: nine events at the description cap plus one sized so that e lands exactly on / just over the limit
+  const full = newEvent({ title: 'x', date: '2026-01-01', allDay: true, description: 'd'.repeat(LIMITS.description) });
+  const withDesc = (n) => encodeFragment({ events: [...Array(9).fill(full), newEvent({ title: 'x', date: '2026-01-01', allDay: true, description: 'd'.repeat(n) })], tz: TZ });
+  const eLen = (frag) => new URLSearchParams(frag).get('e').length;
+  let n = 2000;
+  while (eLen(withDesc(n)) < MAX_E_LENGTH) n++;
+  const atLimit = withDesc(n);
+  eq(eLen(atLimit), MAX_E_LENGTH, 'a fragment with e exactly at MAX_E_LENGTH exists');
+  eq(decodeFragment(atLimit).status, 'ok', 'e at MAX_E_LENGTH still decodes');
+  const over = withDesc(n + 3);
+  ok(eLen(over) > MAX_E_LENGTH && eLen(over) <= MAX_E_LENGTH + 4, `e just over the limit (${eLen(over)})`);
+  bad(over, 'valid content, e just over MAX_E_LENGTH');
+}
 bad(B_FRAGMENT.replace('Europe%2FBerlin', 'Mars%2FOlympus'), 'tz=Mars/Olympus');
 bad(B_FRAGMENT.replace('tz=Europe%2FBerlin&', ''), 'tz missing');
 bad(B_FRAGMENT + '&e=' + b64([{ t: 'y', d: '2026-01-01', a: 1 }]), 'two e');
