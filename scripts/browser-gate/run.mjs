@@ -181,6 +181,49 @@ try {
   if (!empty.shown || !empty.inView || empty.banner || !asked.shown || !asked.inView || asked.buttons !== 2 || asked.banner || !declined) fail(`address search messages: ${JSON.stringify({ empty, asked, declined })}`);
   else ok('address search: "enter an address" and the consent question appear in view under the button, declining hides it');
 
+  // All day: the duration select counts days; a preset sets the end date, a typed end date is read back.
+  phase = 'days';
+  const days = await t.evaluate(`(async () => {
+    const q = (s) => document.querySelector(s); const tick = () => new Promise((r) => setTimeout(r, 50));
+    const set = (s, v) => { const e = q(s); e.value = v; e.dispatchEvent(new Event('change', { bubbles: true })); };
+    set('#f-date', '2030-10-20'); await tick();
+    q('#f-allday').click(); await tick();
+    const rows = [!q('#dur-row').hidden, !q('#day-dur-row').hidden];
+    set('#f-day-duration', '3'); await tick();
+    const preset = q('#f-end-date').value;
+    set('#f-end-date', '2030-10-26'); await tick();
+    const week = q('#f-day-duration').value;
+    set('#f-end-date', '2030-10-29'); await tick();
+    const other = q('#f-day-duration').value;
+    // A typed span selects both days; a preset then shrinks the grid to the start day (the end lives in the field).
+    set('#f-day-duration', '2'); await tick();
+    const shrunk = [[...document.querySelectorAll('#calendar [aria-pressed="true"]')].map((b) => b.dataset.date), q('#f-end-date').value];
+    // The grid stays the user's: a preset neither pulls a day into the selection nor blocks "each" or "Clear".
+    const day = async (d) => { q('[data-date="' + d + '"]').click(); await tick(); };
+    const picked = () => [...document.querySelectorAll('#calendar [aria-pressed="true"]')].map((b) => b.dataset.date);
+    // "other" sets nothing: a day picked then is a one-day event, read back as "1".
+    q('#clear-sel').click(); await tick();
+    set('#f-day-duration', 'custom'); await tick();
+    await day('2030-10-05');
+    const otherPick = [q('#f-date').value, q('#f-end-date').value, q('#f-day-duration').value];
+    q('#clear-sel').click(); await tick();
+    set('#f-day-duration', '3'); await tick();
+    const noPull = picked().length;
+    await day('2030-10-10');
+    const oneDay = [q('#f-date').value, q('#f-end-date').value];
+    await day('2030-10-15');
+    const two = picked();
+    q('input[name="days-mode"][value="each"]').click(); await tick();
+    const eachHides = q('#day-dur-row').hidden;
+    q('#clear-sel').click(); await tick();
+    const cleared = q('#clear-sel').hidden;
+    q('#f-allday').click(); await tick();
+    return { rows, preset, week, other, shrunk, otherPick, noPull, oneDay, two, eachHides, cleared, back: [!q('#dur-row').hidden, !q('#day-dur-row').hidden] };
+  })()`);
+  const want = { rows: [false, true], preset: '2030-10-22', week: '7', other: 'custom', shrunk: [['2030-10-20'], '2030-10-21'], otherPick: ['2030-10-05', '2030-10-05', '1'], noPull: 0, oneDay: ['2030-10-10', '2030-10-12'], two: ['2030-10-10', '2030-10-15'], eachHides: true, cleared: true, back: [true, false] };
+  if (JSON.stringify(days) !== JSON.stringify(want)) fail(`all-day duration: ${JSON.stringify(days)}`);
+  else ok('all day: the duration counts days ("3 days" sets the end date, a typed end date is read back); a day picked in the grid takes the preset, a second pick adds to the selection instead of a rewritten one, "each" hides the day count, Clear clears');
+
   await loadView(true);
   phase = 'editor';
   await t.evaluate(`document.querySelector('#view-edit').click(), true`);

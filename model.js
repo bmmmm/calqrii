@@ -67,6 +67,9 @@ export function compareDates(a, b) {
 
 export const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480];
 export const DEFAULT_DURATION = 60;
+// All-day events count their duration in days (start and end day included).
+export const DAY_DURATIONS = [1, 2, 3, 4, 5, 6, 7, 14];
+export const DEFAULT_DAY_DURATION = 1;
 const DAY_MIN = 1440;
 
 /** Minutes since midnight for a valid 'HH:MM'; NaN otherwise. */
@@ -111,6 +114,18 @@ export function durationOption(ev, current) {
   }
   const span = spanMinutes(ev);
   return DURATIONS.includes(span) ? String(span) : 'custom';
+}
+
+/**
+ * Value of the all-day duration select: the days from date to endDate, both
+ * included, as a preset or 'custom'. Without valid dates ("each" mode) a
+ * preset (`current`) stays, 'custom' falls back to the default.
+ */
+export function dayDurationOption(ev, current) {
+  const end = ev.endDate === '' ? ev.date : ev.endDate;
+  if (!isValidDate(ev.date) || !isValidDate(end)) return current && current !== 'custom' ? current : String(DEFAULT_DAY_DURATION);
+  const days = Math.round((fromIso(end) - fromIso(ev.date)) / 86400000) + 1;
+  return DAY_DURATIONS.includes(days) ? String(days) : 'custom';
 }
 
 // --- map position: pasted map links, geo: URIs or "lat, lon" become one canonical 'lat,lon'

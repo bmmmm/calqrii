@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   newEvent, normalizeEvent, validateEvent, expandDraft, isValidDate, isValidTime, addDays, weekdayOf, compareDates, LIMITS,
-  DURATIONS, DEFAULT_DURATION, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
+  DURATIONS, DEFAULT_DURATION, DAY_DURATIONS, DEFAULT_DAY_DURATION, dayDurationOption, timeToMinutes, minutesToTime, addMinutes, spanMinutes, durationOption,
   presetRule, recurrencePreset, isGeo, parseGeo, osmMapUrl, osmSearchUrl, ERROR_FIELDS,
 } from '../model.js';
 import { STR } from '../i18n.js';
@@ -59,6 +59,20 @@ eq(durationOption(T(D, '23:30', '2026-10-06', '00:30'), 'custom'), '60', 'an ove
 eq(durationOption(T(D, '09:00', '2026-10-07', '10:00'), '60'), 'custom', 'a multi-day span never matches a preset');
 deq(DURATIONS, [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480], 'duration presets');
 eq(DEFAULT_DURATION, 60, 'default duration');
+deq(DAY_DURATIONS, [1, 2, 3, 4, 5, 6, 7, 14], 'all-day duration presets');
+eq(DEFAULT_DAY_DURATION, 1, 'default all-day duration');
+eq(dayDurationOption(T(D, '', D, ''), '3'), '1', 'one day, start and end included');
+eq(dayDurationOption(T(D, '', '2026-10-07', ''), '1'), '3', 'three days');
+eq(dayDurationOption(T(D, '', '2026-10-18', ''), '1'), '14', 'two weeks');
+eq(dayDurationOption(T(D, '', '2026-10-13', ''), '1'), 'custom', 'nine days is other');
+eq(dayDurationOption(T(D, '', '', ''), '5'), '1', 'a blank end date counts as the start day');
+eq(dayDurationOption(T('', '', '', ''), '5'), '5', 'without dates a preset stays');
+eq(dayDurationOption(T('', '', '', ''), 'custom'), '1', 'without dates other falls back to one day');
+eq(dayDurationOption(T(D, '', '2026-03-01', ''), '1'), 'custom', 'an end before the start is other');
+eq(STR.en.days_label(1), '1 day', 'en day label');
+eq(STR.de.days_label(3), '3 Tage', 'de day label');
+eq(STR.de.days_label(14), '2 Wochen', 'de weeks label');
+eq(STR.en.days_label(7), '1 week', 'en week label');
 
 // validation: valid + invalid per rule
 deq(errsOf({}), [], 'base draft is valid');

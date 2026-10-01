@@ -14,7 +14,8 @@ import { STR } from './i18n.js';
 import { searchNominatim } from './geocode.js';
 import {
   expandDraft, normalizeEvent, isValidDate, isValidTime, weekdayOf, compareDates, addDays, addMinutes, durationOption,
-  presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, LIMITS, ERROR_FIELDS,
+  dayDurationOption, presetRule, recurrencePreset, parseGeo, osmMapUrl, osmSearchUrl, DEFAULT_DURATION, DEFAULT_DAY_DURATION,
+  LIMITS, ERROR_FIELDS,
 } from './model.js';
 
 // One timestamp per page load: DTSTAMP must not drift between renders, or
@@ -78,6 +79,7 @@ function applyLang(code) {
   }
   for (const el of document.querySelectorAll('[data-wd]')) el.textContent = t().weekdays_short[Number(el.dataset.wd)];
   for (const el of document.querySelectorAll('[data-dur]')) el.textContent = t().dur_label(Number(el.dataset.dur));
+  for (const el of document.querySelectorAll('[data-days]')) el.textContent = t().days_label(Number(el.dataset.days));
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t()[el.dataset.i18nAria]);
   $('lang-en').setAttribute('aria-pressed', String(lang === 'en'));
   $('lang-de').setAttribute('aria-pressed', String(lang === 'de'));
@@ -155,6 +157,7 @@ function fillEditor(ev) {
   els.start.value = ev.startTime;
   els.end.value = ev.endTime;
   els.duration.value = durationOption(ev, String(DEFAULT_DURATION));
+  els.dayDuration.value = dayDurationOption(ev, String(DEFAULT_DAY_DURATION));
   els.location.value = ev.location;
   els.desc.value = ev.description;
   els.url.value = ev.url;
@@ -179,6 +182,7 @@ function resetEditor() {
   els.date.value = today;
   els.endDate.value = today;
   els.duration.value = String(DEFAULT_DURATION);
+  els.dayDuration.value = String(DEFAULT_DAY_DURATION);
   els.interval.value = '1';
   els.count.value = '10';
   els.more.open = false;
@@ -421,7 +425,7 @@ function syncDatesFromSelection() {
     els.endDate.value = today;
   }
   ensureStartWeekday();
-  // A span picked in the grid is re-read (→ "other"); one day or "each" carries the end along.
+  // A span picked in the grid is re-read (timed → "other", all day → its day count); one day or "each" carries the end along.
   const span = !each && days.length >= 2;
   if (span || !applyDuration()) syncDurationSelect();
 }
@@ -453,6 +457,7 @@ function ensureStartWeekday() {
  * false when nothing was applied ("other", or no valid start).
  */
 function applyDuration() {
+  if (els.allDay.checked) return applyDayDuration();
   if (els.duration.value === 'custom' || !isValidTime(els.start.value)) return false;
   const date = eachMode() || !isValidDate(els.date.value) ? '' : els.date.value;
   const end = addMinutes(date, els.start.value, Number(els.duration.value));
@@ -464,10 +469,29 @@ function applyDuration() {
   return true;
 }
 
-/** The select re-reads the fields; all-day hides it, so its value is left alone. */
+/**
+ * All day: a preset + valid start date → end date = start + days − 1. Like
+ * applyDuration it leaves the grid alone except to shrink a selection of 2+
+ * days to the start day (expandDraft 'span' would take the end date from it).
+ */
+function applyDayDuration() {
+  if (els.dayDuration.value === 'custom' || !isValidDate(els.date.value)) return false; // "each" blanks the date
+  els.endDate.value = addDays(els.date.value, Number(els.dayDuration.value) - 1);
+  if (state.selected.size > 1) state.selected = new Set([els.date.value]); // a new Set, as in applyDuration
+  return true;
+}
+
+/** The visible select re-reads the fields: days for all-day events, the time span otherwise; the hidden one is left alone. */
 function syncDurationSelect() {
-  if (els.allDay.checked) return;
-  els.duration.value = durationOption(readEditor(), els.duration.value);
+  if (els.allDay.checked) els.dayDuration.value = dayDurationOption(readEditor(), els.dayDuration.value);
+  else els.duration.value = durationOption(readEditor(), els.duration.value);
+}
+
+function onDayDurationChange() {
+  if (els.dayDuration.value === 'custom') { els.endDate.focus(); return; }
+  const sel = state.selected;
+  applyDayDuration();
+  if (state.selected !== sel) render(); // as followStart: only a shrunk selection changes the grid
 }
 
 /** Start or duration changed: the end follows; render only if the selection shrank (no list re-render per keystroke). */
@@ -674,6 +698,7 @@ function renderEditorState() {
   els.start.hidden = allDay;
   els.end.hidden = allDay;
   els.durRow.hidden = allDay;
+  els.dayDurRow.hidden = !allDay || each; // "each": every event is one day long
   if (allDay) { els.start.value = ''; els.end.value = ''; }
   const custom = els.freq.value === 'custom';
   const freq = effectiveFreq();
@@ -1197,7 +1222,7 @@ async function main() {
     banner: $('banner'), calendar: $('calendar'), selInfo: $('sel-info'), clearSel: $('clear-sel'),
     form: $('editor'), title: $('f-title'), allDay: $('f-allday'), daysMode: $('days-mode'),
     date: $('f-date'), start: $('f-start'), endDate: $('f-end-date'), end: $('f-end'),
-    duration: $('f-duration'), durRow: $('dur-row'),
+    duration: $('f-duration'), durRow: $('dur-row'), dayDuration: $('f-day-duration'), dayDurRow: $('day-dur-row'),
     freq: $('f-freq'), cfreq: $('f-cfreq'), repOpts: $('rep-opts'), repCustom: $('rep-custom'), repSummary: $('rep-summary'),
     interval: $('f-interval'), intervalUnit: $('f-interval-unit'),
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
@@ -1241,6 +1266,7 @@ async function main() {
   els.start.addEventListener('input', followStart);
   els.end.addEventListener('input', syncDurationSelect);
   els.duration.addEventListener('change', onDurationChange);
+  els.dayDuration.addEventListener('change', onDayDurationChange);
   els.date.addEventListener('change', onFromDateChange);
   els.endDate.addEventListener('change', onToDateChange);
   els.location.addEventListener('input', () => { syncOsmSearch(); clearGeoResults(); });

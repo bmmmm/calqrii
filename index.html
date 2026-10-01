@@ -94,6 +94,21 @@
         <option value="custom" data-i18n="dur_custom">other — enter end time</option>
       </select>
     </div>
+    <!-- All day: the duration counts days instead; the end date follows a preset, a typed end date selects one or "other". -->
+    <div class="row" id="day-dur-row" hidden>
+      <label for="f-day-duration" data-i18n="f_duration">Duration</label>
+      <select id="f-day-duration" name="day-duration">
+        <option value="1" data-days="1" selected>1 day</option>
+        <option value="2" data-days="2">2 days</option>
+        <option value="3" data-days="3">3 days</option>
+        <option value="4" data-days="4">4 days</option>
+        <option value="5" data-days="5">5 days</option>
+        <option value="6" data-days="6">6 days</option>
+        <option value="7" data-days="7">1 week</option>
+        <option value="14" data-days="14">2 weeks</option>
+        <option value="custom" data-i18n="days_custom">other — enter end date</option>
+      </select>
+    </div>
     <div class="row">
       <label for="f-end-date" data-i18n="f_to">To</label>
       <div class="fields">

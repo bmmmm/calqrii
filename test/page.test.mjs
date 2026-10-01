@@ -2,7 +2,7 @@
 // constants they stand for. Run: node test/page.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DURATIONS, DEFAULT_DURATION, FREQS, ERROR_FIELDS } from '../model.js';
+import { DURATIONS, DEFAULT_DURATION, DAY_DURATIONS, DEFAULT_DAY_DURATION, FREQS, ERROR_FIELDS } from '../model.js';
 
 let checks = 0;
 const deq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
@@ -24,6 +24,10 @@ const dur = options(selectById('f-duration'));
 deq(dur.map((o) => attr(o, 'value')), [...DURATIONS.map(String), 'custom'], 'duration options mirror DURATIONS plus custom');
 deq(dur.filter((o) => /\bselected\b/.test(o)).map((o) => attr(o, 'value')), [String(DEFAULT_DURATION)], 'the default duration is preselected');
 deq(dur.map((o) => attr(o, 'data-dur')).filter((v) => v !== null), DURATIONS.map(String), 'every preset carries data-dur for relabelling');
+const dayDur = options(selectById('f-day-duration'));
+deq(dayDur.map((o) => attr(o, 'value')), [...DAY_DURATIONS.map(String), 'custom'], 'all-day duration options mirror DAY_DURATIONS plus custom');
+deq(dayDur.filter((o) => /\bselected\b/.test(o)).map((o) => attr(o, 'value')), [String(DEFAULT_DAY_DURATION)], 'the default day duration is preselected');
+deq(dayDur.map((o) => attr(o, 'data-days')).filter((v) => v !== null), DAY_DURATIONS.map(String), 'every day preset carries data-days for relabelling');
 
 // repeat selects
 deq(options(selectById('f-freq')).map((o) => attr(o, 'value')), [...FREQS, 'custom'], 'repeat options are FREQS plus custom');
