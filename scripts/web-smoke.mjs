@@ -20,7 +20,7 @@ const PAGES = { 'index.html': 'app.js', 'import.html': 'import.js' };
 // Each page's exact module set (entry, imports, classic scripts). A new import is a one-line change here.
 const PAGE_GRAPH = {
   'index.html': ['app.js', 'calendar.js', 'ics.js', 'fragment.js', 'qr.js', 'i18n.js', 'geocode.js', 'model.js', 'qrcodegen.js'],
-  'import.html': ['import.js', 'parse.js', 'fragment.js', 'i18n.js', 'model.js', 'ics.js', 'tzmap.js'],
+  'import.html': ['import.js', 'parse.js', 'fragment.js', 'i18n.js', 'model.js', 'ics.js', 'tzmap.js', 'qr.js', 'qrcodegen.js'],
 };
 const EXTRA_SHIPPED = ['favicon.ico', '404.html', 'robots.txt', 'sitemap.xml', 'LICENSE', 'NOTICE'];
 // The one module allowed to use the network, and the one origin it may name.

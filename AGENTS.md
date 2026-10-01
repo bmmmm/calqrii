@@ -31,7 +31,8 @@ and the two scripts.
   builds a share link or a link-mode QR text from a page base.
 - `import.html` · `import.js` — the "extra" page: `.ics` file or pasted text →
   pick list → share link into the main page's view (`linkFor` with the page's
-  directory as base). No network at all.
+  directory as base); each card opens its own codes (the event's calqrii link,
+  and its `URL` when the source names one). No network at all.
 - `parse.js` — pure import parsers: `parseIcs` (unfold, params, TZID/UTC →
   page zone, DURATION, RRULE subset, VALARM skipped), `parseText` (date/time
   heuristics DE/EN, title before/after layout), `parseInput` (detect, validate,
@@ -61,7 +62,7 @@ and the two scripts.
   DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes
   every rendered code with `BarcodeDetector` and compares it byte for byte;
   `--sweep` adds the scale/blur and ECC report; an `import` phase pastes a
-  list into `import.html` and follows "Open in calqrii" into the view. Needs
+  list into `import.html`, decodes a card's codes and follows "Open in calqrii" into the view. Needs
   Chrome outside a sandbox and Node ≥ 22; not part of `npm test` or CI. It serves
   the repo with `serve.py` (listen backlog 128): `python3 -m http.server` has a
   backlog of 5 and reset module loads (`ERR_CONNECTION_RESET`) when Chrome
@@ -73,7 +74,7 @@ and the two scripts.
   are named in the log line.
 
 Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
-geocode.js`; `import.js → parse.js, fragment.js, i18n.js, model.js`;
+geocode.js`; `import.js → parse.js, fragment.js, i18n.js, model.js, qr.js`;
 `parse.js → model.js, ics.js, tzmap.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
 static and relative (`./x.js`).
 

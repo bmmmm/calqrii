@@ -121,6 +121,19 @@
     return res;
   }
 
+  /** Every rendered code on the import page, decoded and compared byte for byte with its link's href attribute. */
+  async function probeImportCodes() {
+    const res = [];
+    for (const f of document.querySelectorAll('.imp-code')) {
+      const svg = f.querySelector('.qr svg');
+      const text = f.querySelector('.imp-code-link').getAttribute('href');
+      if (!svg) { res.push({ text, roundTrip: { ok: false, error: 'no code rendered' } }); continue; }
+      const d = await detectText((await nativeRaster(new XMLSerializer().serializeToString(svg))).c);
+      res.push({ text, roundTrip: d.raw === null ? { ok: false, error: 'no detection' } : compare(text, d.raw) });
+    }
+    return res;
+  }
+
   /** The same text at every ECC level (boostEcl off, so the level is the asked one), same sweep. */
   async function eccAlternatives(text) {
     const q = globalThis.qrcodegen.QrCode;
@@ -176,6 +189,6 @@
     };
   }
 
-  globalThis.__probe = { probePanels, eccAlternatives, qrWidth, selfTest, WIDTHS, BLURS };
+  globalThis.__probe = { probePanels, probeImportCodes, eccAlternatives, qrWidth, selfTest, WIDTHS, BLURS };
   return 'probe ready';
 })();

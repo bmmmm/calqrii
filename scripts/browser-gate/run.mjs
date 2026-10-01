@@ -215,7 +215,24 @@ try {
     if (attempt === 5) throw new Error('import page did not boot');
     log('import page not booted, retry', attempt, '--', failedSince(bootMark));
   }
-  await t.evaluate(`(() => { const ta = document.querySelector('#imp-text'); ta.value = ${JSON.stringify(IMPORT_TEXT)}; ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const paste = (text) => t.evaluate(`(() => { const ta = document.querySelector('#imp-text'); ta.value = ${JSON.stringify(text)}; ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  // Per-event codes: a calendar event that names its page gets two (its calqrii link, its page), both decoded.
+  await t.evaluate(probeSrc);
+  const EVENT_URL = 'https://example.org/termine/grillfest?id=7&lang=de';
+  await paste(['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20301005T170000Z', 'DTEND:20301005T190000Z', 'SUMMARY:Grillfest', `URL:${EVENT_URL}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+  await waitFor(`document.querySelectorAll('#imp-list > li').length === 1`);
+  await t.evaluate(`(document.querySelector('.imp-codes').open = true, true)`);
+  if (!await waitFor(`document.querySelectorAll('.imp-code .qr svg').length === 2`)) fail(`import codes: ${await t.evaluate(`document.querySelectorAll('.imp-code').length`)} codes rendered, 2 expected`);
+  else {
+    const codes = await t.evaluate('__probe.probeImportCodes()');
+    const bad = codes.filter((c) => !c.roundTrip.ok);
+    if (codes.length !== 2 || bad.length || !codes[0].text.startsWith(BASE + '#') || codes[1].text !== EVENT_URL) fail(`import codes: ${JSON.stringify(codes)}`);
+    else ok('import: an event opens two codes, its calqrii link and its page, both decoded byte for byte');
+    await t.evaluate(`(document.querySelector('#imp-none').click(), true)`); // re-renders every card
+    if (!await waitFor(`document.querySelector('.imp-codes').open && document.querySelectorAll('.imp-code .qr svg').length === 2`)) fail('import codes: an open card closed on re-render');
+    else ok('import: open codes stay open when the list re-renders');
+  }
+  await paste(IMPORT_TEXT);
   if (!await waitFor(`document.querySelectorAll('#imp-list > li').length === ${IMPORT_TITLES.length} && (document.querySelector('#imp-open').getAttribute('href') || '').startsWith(${JSON.stringify(BASE + '#')})`)) {
     fail(`import: ${await t.evaluate(`document.querySelectorAll('#imp-list > li').length`)} cards, link ${await t.evaluate(`document.querySelector('#imp-open').getAttribute('href')`)}`);
   } else {

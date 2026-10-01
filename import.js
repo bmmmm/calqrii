@@ -6,6 +6,7 @@ import { parseInput } from './parse.js';
 import { linkFor, MAX_E_LENGTH } from './fragment.js';
 import { STR } from './i18n.js';
 import { osmMapUrl, LIMITS } from './model.js';
+import { qrSvg } from './qr.js';
 
 const PARSE_DELAY_MS = 150;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
@@ -31,6 +32,7 @@ const t = () => STR[lang];
 let els = null;
 let parseTimer = 0;
 let linkSeq = 0;
+const openCodes = new Set(); // ev.id of the cards whose codes are open; survives every re-render
 
 // --- i18n (the same mechanism as app.js, for this page's own elements)
 
@@ -152,6 +154,15 @@ function renderList() {
     showText(node.querySelector('.imp-desc'), ev.description.length > 160 ? ev.description.slice(0, 157) + '…' : ev.description);
     showText(node.querySelector('.imp-warn'), it.warnings.map((w) => t()[w]).filter(Boolean).join(' '));
     showText(node.querySelector('.imp-err'), it.errors.length ? `${t().imp_invalid} ${it.errors.map(errorText).join(' ')}` : '');
+    const codes = node.querySelector('.imp-codes');
+    codes.hidden = it.errors.length > 0;
+    codes.querySelector('summary').textContent = t().imp_codes;
+    codes.addEventListener('toggle', () => {
+      if (!codes.open) { openCodes.delete(ev.id); return; }
+      openCodes.add(ev.id);
+      renderCodes(codes.querySelector('.imp-code-list'), ev);
+    });
+    codes.open = !codes.hidden && openCodes.has(ev.id);
     nodes.push(node);
   }
   els.list.replaceChildren(...nodes);
@@ -203,6 +214,41 @@ function setLink(link, note) {
   showText(els.linkNote, note);
 }
 
+/** One event's codes: its own calqrii link and, when the source names one, the event's page. */
+async function renderCodes(box, ev) {
+  const codes = [];
+  try {
+    const link = await linkFor(pageBase(), [ev], state.tz);
+    if (link.length - link.indexOf('#') <= MAX_E_LENGTH) codes.push({ text: link, label: t().imp_code_view, external: false });
+  } catch { /* no link for this event: its page code alone */ }
+  if (ev.url) codes.push({ text: ev.url, label: t().imp_code_url, external: true });
+  box.replaceChildren(...codes.map(codeNode));
+}
+
+function codeNode({ text, label, external }) {
+  const node = els.tplCode.content.cloneNode(true);
+  const a = node.querySelector('.imp-code-link');
+  a.href = text;
+  a.textContent = label;
+  if (external) a.rel = 'noopener noreferrer';
+  const qrEl = node.querySelector('.qr');
+  let svg = null;
+  try { svg = svgNode(qrSvg(text).svg); } catch { /* over the QR capacity: the link alone */ }
+  if (svg) {
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', label);
+    qrEl.replaceChildren(svg);
+  } else qrEl.hidden = true;
+  return node;
+}
+
+function svgNode(text) {
+  // Parsed as XML and inserted as a node, never assigned as an HTML string (as in app.js).
+  const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+  if (root.nodeName !== 'svg' || root.querySelector('parsererror')) return null;
+  return document.importNode(root, true);
+}
+
 /** The directory this page lives in: the main page is its index. */
 function pageBase() {
   return location.origin + location.pathname.replace(/[^/]*$/, '');
@@ -242,7 +288,7 @@ function init() {
     result: $('imp-result'), list: $('imp-list'), all: $('imp-all'), none: $('imp-none'),
     pastRow: $('imp-past-row'), showPast: $('imp-show-past'), showPastLabel: $('imp-show-past-label'),
     bar: $('imp-bar'), count: $('imp-count'), open: $('imp-open'), copy: $('imp-copy'), linkNote: $('imp-link-note'),
-    tplCard: $('tpl-imp-card'),
+    tplCard: $('tpl-imp-card'), tplCode: $('tpl-imp-code'),
   };
   $('lang-en').addEventListener('click', () => applyLang('en'));
   $('lang-de').addEventListener('click', () => applyLang('de'));

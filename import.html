@@ -79,9 +79,16 @@
         <span class="imp-err"></span>
       </span>
     </label>
+    <!-- Outside the label: opening the codes must not toggle the selection. Filled when opened. -->
+    <details class="imp-codes"><summary></summary><div class="imp-code-list"></div></details>
   </li>
 </template>
 
+<template id="tpl-imp-code">
+  <figure class="imp-code"><div class="qr"></div><figcaption><a class="imp-code-link"></a></figcaption></figure>
+</template>
+
+<script src="qrcodegen.js"></script>
 <script type="module" src="import.js"></script>
 </body>
 </html>
