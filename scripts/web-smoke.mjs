@@ -111,6 +111,16 @@ for (const page of Object.keys(PAGES)) {
   else if (!badRefs) ok(`${page}: ${count} relative asset references, all present`);
 }
 
+// Specifiers of a module's static imports and re-exports, over-read on purpose (fail closed): `from '…'`
+// anywhere, so no clause shape (a comment or `;` inside the braces, `as "x;y"`) can hide one, and a
+// side-effect `import '…'` at a statement start (line start, after `;` `{` `}` or a block comment). The
+// price: a string literal ending in the word `from`, or `; import '…'` inside a comment or string, fails
+// with the file named -- reword it. Dynamic import() is §1's job.
+function importSpecifiers(src) {
+  const re = /\bfrom\s*['"]([^'"]+)['"]|(?:^|[;{}]|\*\/)\s*import\s*['"]([^'"]+)['"]/gm;
+  return [...src.matchAll(re)].map((m) => m[1] ?? m[2]);
+}
+
 // --- 5. module graph: static relative imports only, closed over SHIPPED, pinned per page
 {
   const seen = new Set(['style.css', ...Object.keys(PAGES)]);
@@ -119,14 +129,13 @@ for (const page of Object.keys(PAGES)) {
     const scripts = [...stripComments(page).matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
     if (!scripts.includes(entry)) fail(`${page} does not load its entry ${entry}`);
     const reached = new Set(scripts);
-    const queue = [entry];
+    const queue = [...scripts]; // every script the page loads, not only its entry: a second module script brings its own imports
     while (queue.length) {
       const name = queue.shift();
       if (!SHIPPED.includes(name)) { fail(`${name} is imported but not in SHIPPED`); bad++; continue; }
       reached.add(name);
-      for (const m of read(name).matchAll(/\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm)) {
-        const spec = m[1] ?? m[2];
-        if (!spec.startsWith('./') || spec.includes('/', 2)) { fail(`${name} imports ${spec}: only ./x.js is allowed`); bad++; continue; }
+      for (const spec of importSpecifiers(read(name))) {
+        if (!spec.startsWith('./') || spec.includes('/', 2)) { fail(`${name} imports ${JSON.stringify(spec.slice(0, 40))}: only ./x.js is allowed`); bad++; continue; }
         const dep = spec.slice(2);
         if (!reached.has(dep) && !queue.includes(dep)) queue.push(dep);
       }

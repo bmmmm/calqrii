@@ -37,7 +37,7 @@ and the two scripts.
   heuristics DE/EN, title before/after layout), `parseInput` (detect, validate,
   past flag). Unsupported input becomes an `imp_warn_*` key, never a silent change.
 - `tzmap.js` — Windows zone name → IANA (Outlook's `TZID`), generated from Unicode
-  CLDR by `scripts/gen-tzmap.mjs` (the only script that needs the network); do not edit.
+  CLDR by `scripts/gen-tzmap.mjs` (it fetches the table; run it by hand, not part of any gate); do not edit.
 - `geocode.js` — opt-in Nominatim address search; the only module that may
   name the network (`fetch` exactly once, one origin — the gate pins both).
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
@@ -48,13 +48,26 @@ and the two scripts.
   the option lists in `index.html` against the model's constants.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
   shipped files (both pages: `PAGES` maps each HTML entry to its module, `PAGE_GRAPH`
-  pins each page's exact module set — a new import is a one-line change there); `.github/workflows/pages.yml` runs tests + smoke, then deploys.
+  pins each page's exact module set — a new import is a one-line change there; §5 walks every
+  quoted lower-case `<script src>` of a page and over-reads imports on purpose: `from '…'` anywhere
+  and a side-effect `import '…'` at a statement start. A string ending in the word `from`, or
+  `; import '…'` in a comment or string, usually fails with the file named — reword it. Still
+  unseen: a comment between `from`/`import` and the specifier, and an unquoted or upper-case `src`);
+  `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 - `scripts/browser-gate/` — `npm run gate:browser`: headless Chrome over the
   DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes
   every rendered code with `BarcodeDetector` and compares it byte for byte;
   `--sweep` adds the scale/blur and ECC report; an `import` phase pastes a
   list into `import.html` and follows "Open in calqrii" into the view. Needs
-  Chrome outside a sandbox and Node ≥ 22; not part of `npm test` or CI.
+  Chrome outside a sandbox and Node ≥ 22; not part of `npm test` or CI. It serves
+  the repo with `serve.py` (listen backlog 128): `python3 -m http.server` has a
+  backlog of 5 and reset module loads (`ERR_CONNECTION_RESET`) when Chrome
+  fetched a page's module graph in a burst on a busy machine. A step that
+  loads a page is retried (reload, or navigation to the link) only when a load failed in that attempt
+  (never for a page that is merely not ready), the failed attempt's console
+  entries, exceptions and failed loads are dropped (`mark`/`rewind`; the request
+  list is kept, so the off-origin check sees every attempt) and the failed URLs
+  are named in the log line.
 
 Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
 geocode.js`; `import.js → parse.js, fragment.js, i18n.js, model.js`;
@@ -72,10 +85,11 @@ static and relative (`./x.js`).
   `shasum -a 256 qrcodegen.js`; no gate enforces it yet). The oracle test in
   `test/qr.test.mjs` proves the encoder still produces the pinned symbol.
 - **Zero storage.** Never add storage APIs, network calls outside
-  `geocode.js` (in shipped files; the unshipped `scripts/gen-tzmap.mjs` is the
-  one exception), writes to the address bar/history, HTML string sinks or
-  external resources — the smoke gate greps for them and the meta CSP pins
-  the rest. The bare word `fetch` may appear only in `geocode.js` (among shipped files), exactly
+  `geocode.js`, writes to the address bar/history, HTML string sinks or
+  external resources to a shipped file — the smoke gate greps for them and the
+  meta CSP pins the rest (`scripts/` are not shipped: `gen-tzmap.mjs` fetches
+  CLDR, the browser gate talks to loopback). The bare word `fetch` may appear
+  only in `geocode.js` among the shipped files, exactly
   once (the injectable default of `searchNominatim`); no other URL in that
   file, not even in a comment; `searchNominatim(` is called once in `app.js`,
   inside `onGeoSearch()`, after the `state.geoConsent` check, and

@@ -84,7 +84,7 @@ try {
   const httpPort = await freePort();
   const cdpPort = await freePort();
   const BASE = `http://127.0.0.1:${httpPort}/`;
-  start('python3', ['-m', 'http.server', String(httpPort), '--bind', '127.0.0.1', '--directory', ROOT], 'http.server');
+  start('python3', [fileURLToPath(new URL('serve.py', here)), String(httpPort), ROOT], 'http.server');
   await waitHttp(BASE + 'index.html', 5000);
   profile = await mkdtemp(join(tmpdir(), 'calqrii-gate-'));
   start(CHROME, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', '--disable-background-networking', 'about:blank'], 'chrome');
@@ -96,8 +96,11 @@ try {
   const requests = [];
   const logEntries = [];
   const exceptions = [];
+  const failedLoads = []; // the console message "Failed to load resource" carries no URL; this does
+  const urlOf = new Map();
   let phase = 'load';
-  t.on('Network.requestWillBeSent', (p) => requests.push({ url: p.request.url, type: p.type, phase }));
+  t.on('Network.requestWillBeSent', (p) => { urlOf.set(p.requestId, p.request.url); requests.push({ url: p.request.url, type: p.type, phase }); });
+  t.on('Network.loadingFailed', (p) => { if (!p.canceled) failedLoads.push(`${urlOf.get(p.requestId) ?? p.requestId} (${p.errorText})`); });
   t.on('Log.entryAdded', (p) => logEntries.push({ ...p.entry, phase }));
   t.on('Runtime.exceptionThrown', (p) => exceptions.push({ text: p.exceptionDetails.exception?.description || p.exceptionDetails.text, phase }));
   t.on('Runtime.consoleAPICalled', (p) => {
@@ -112,16 +115,27 @@ try {
     while (Date.now() < end) { if (await t.evaluate(expr).catch(() => false)) return true; await sleep(100); }
     return false;
   }
-  // The Python dev server now and then resets a module load; a reload cures it.
-  async function loadView() {
+  // serve.py has no backlog trouble any more, but a load can still fail (a busy machine, a cold Chrome); a
+  // reload cures it. A step is retried ONLY when a load failed during the attempt -- a page that is not ready
+  // without any failed load is a fault of the page, and a reload would hide it. A failed attempt leaves e.g. a
+  // net::ERR_CONNECTION_RESET behind: rewind() drops the console entries, exceptions and failed loads the
+  // attempts since mark() recorded, so only the attempt that works is judged and earlier phases stay. The
+  // request list is never rewound: the off-origin check sees every attempt.
+  const mark = () => ({ l: logEntries.length, e: exceptions.length, f: failedLoads.length });
+  const rewind = (m) => { logEntries.length = m.l; exceptions.length = m.e; failedLoads.length = m.f; };
+  const loadFailed = (m) => failedLoads.length > m.f;
+  const failedSince = (m) => failedLoads.slice(m.f).join(', ') || 'no failed load recorded';
+  // `reload`: the tab already shows this URL, so navigating to it again would only be a same-document step.
+  async function loadView(reload = false) {
+    const m = mark();
     for (let attempt = 1; attempt <= 5; attempt++) {
-      // a failed attempt leaves its net::ERR_CONNECTION_RESET in the log; only the attempt that loads is judged
-      requests.length = 0; logEntries.length = 0; exceptions.length = 0;
-      if (attempt === 1) await t.send('Page.navigate', { url: BASE + '#' + fragment });
+      rewind(m);
+      if (attempt === 1 && !reload) await t.send('Page.navigate', { url: BASE + '#' + fragment });
       else await t.send('Page.reload', { ignoreCache: true });
       await sleep(300);
       if (await waitFor(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) return attempt;
-      log('view not ready, retry', attempt);
+      if (!loadFailed(m)) throw new Error('view not ready and no load failed -- not retried');
+      log('view not ready, retry', attempt, '--', failedSince(m));
     }
     throw new Error('page never reached the view screen');
   }
@@ -133,7 +147,7 @@ try {
   if (await waitFor(`!document.querySelector('#view-section').hidden === false && document.activeElement && document.activeElement.id === 'f-title'`, 2000)) ok('"New event" from the view shows the form and focuses the title');
   else fail(`"New event" from the view: form hidden=${await t.evaluate(`document.querySelector('form').hidden`)}, focus on ${await t.evaluate(`document.activeElement && (document.activeElement.id || document.activeElement.tagName)`)}`);
 
-  await loadView();
+  await loadView(true);
   phase = 'editor';
   await t.evaluate(`document.querySelector('#view-edit').click(), true`);
   if (!await waitFor(`document.querySelectorAll('[data-qr-panel] .qr svg').length >= ${EVENTS.length}`)) throw new Error('editor codes not rendered');
@@ -176,12 +190,15 @@ try {
     '17.–18.10.2030', 'Hüttenwochenende', 'Mi 21.10.2030 18:30–20:00 Vorstandssitzung', 'Fr 12.09.2020 Sommerfest (vorbei)'].join('\n');
   const IMPORT_TITLES = ['Grillfest am Vereinsheim', 'Hüttenwochenende', 'Vorstandssitzung']; // the 2020 event is past: hidden and not selected
   // Boot check: applyLang() sets the placeholder, so an empty one means a module load was reset by the dev server.
+  const bootMark = mark();
   for (let attempt = 1; ; attempt++) {
+    rewind(bootMark);
     if (attempt === 1) await t.send('Page.navigate', { url: BASE + 'import.html' });
     else await t.send('Page.reload', { ignoreCache: true });
     if (await waitFor(`!!document.querySelector('#imp-text') && document.querySelector('#imp-text').placeholder !== ''`)) break;
+    if (!loadFailed(bootMark)) throw new Error('import page did not boot and no load failed -- not retried');
     if (attempt === 5) throw new Error('import page did not boot');
-    log('import page not booted, retry', attempt);
+    log('import page not booted, retry', attempt, '--', failedSince(bootMark));
   }
   await t.evaluate(`(() => { const ta = document.querySelector('#imp-text'); ta.value = ${JSON.stringify(IMPORT_TEXT)}; ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   if (!await waitFor(`document.querySelectorAll('#imp-list > li').length === ${IMPORT_TITLES.length} && (document.querySelector('#imp-open').getAttribute('href') || '').startsWith(${JSON.stringify(BASE + '#')})`)) {
@@ -190,8 +207,21 @@ try {
     const cards = await t.evaluate(`[...document.querySelectorAll('.imp-title')].map((e) => e.textContent)`);
     if (JSON.stringify(cards) !== JSON.stringify(IMPORT_TITLES)) fail(`import cards: ${JSON.stringify(cards)}`);
     else ok(`import: ${cards.length} upcoming events listed from the pasted text, the past one hidden`);
-    await t.evaluate(`document.querySelector('#imp-open').click(), true`);
-    if (!await waitFor(`document.querySelectorAll('#view-list > li').length === ${IMPORT_TITLES.length} && !document.querySelector('#view-section').hidden`, 6000)) fail('import: "Open in calqrii" did not reach the view');
+    // The click navigates to index.html, a fresh module graph. When a load of it failed, the retry goes to the
+    // link's URL again: a reload if the tab already shows it, a navigation if the first one never committed.
+    const openHref = await t.evaluate(`document.querySelector('#imp-open').href`);
+    const openMark = mark();
+    let opened = false;
+    for (let attempt = 1; attempt <= 3 && !opened; attempt++) {
+      rewind(openMark);
+      if (attempt === 1) await t.evaluate(`document.querySelector('#imp-open').click(), true`);
+      else if (await t.evaluate('location.href') === openHref) await t.send('Page.reload', { ignoreCache: true });
+      else await t.send('Page.navigate', { url: openHref });
+      opened = await waitFor(`document.querySelectorAll('#view-list > li').length === ${IMPORT_TITLES.length} && !document.querySelector('#view-section').hidden`, 6000);
+      if (!opened && !loadFailed(openMark)) break; // no failed load: a fault of the page, not retried
+      if (!opened && attempt < 3) log('import: "Open in calqrii" did not reach the view, retry', attempt, '--', failedSince(openMark));
+    }
+    if (!opened) fail(`import: "Open in calqrii" did not reach the view (${failedSince(openMark)})`);
     else {
       const titles = await t.evaluate(`[...document.querySelectorAll('.view-title')].map((e) => e.textContent)`);
       const where = await t.evaluate(`document.querySelector('.view-where .where-text').textContent`);
@@ -205,7 +235,7 @@ try {
   if (offOrigin.length) fail(`requests beyond the dev server: ${offOrigin.map((r) => r.url).join(', ')}`);
   else ok(`${requests.filter((r) => !r.url.startsWith('data:')).length} requests, all to ${BASE}`);
   const loud = logEntries.filter((e) => e.level === 'error' || e.level === 'warning');
-  if (loud.length) fail(`console errors/warnings: ${loud.map((e) => e.text).join(' | ')}`);
+  if (loud.length) fail(`console errors/warnings: ${loud.map((e) => e.text).join(' | ')}${failedLoads.length ? ` -- failed loads: ${failedLoads.join(', ')}` : ''}`);
   else ok('no console error or warning (no CSP violation)');
   if (exceptions.length) fail(`uncaught exceptions: ${exceptions.map((e) => e.text).join(' | ')}`);
   else ok('no uncaught exception');
