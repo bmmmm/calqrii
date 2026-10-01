@@ -28,6 +28,12 @@ location text on openstreetmap.org to find it, and "Search address
 (OpenStreetMap)" looks it up from the page (opt-in, see Privacy) and fills in
 both the address and the position.
 
+Every code asks for error-correction level L: at a given display size fewer,
+larger modules read more reliably than extra redundancy (measured with
+`BarcodeDetector` on 2026-10-01: L decoded at smaller sizes than M for 13 of
+15 codes), and the encoder raises the level for free whenever the chosen
+version has room.
+
 An option puts all events into a single code. As calendar data it is
 experimental: scanner libraries such as ZXing read only the first event from
 such a code, and phone cameras are untested. As a link it carries every event

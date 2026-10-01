@@ -350,7 +350,7 @@ function renderPayloadMeter() {
   if (!ev) { els.meter.textContent = ''; els.meter.hidden = true; return; }
   const bytes = utf8Length(state.payload === 'link' ? eventLink(ev) : serializeEvent(ev, icsOpts()));
   const tier = sizeTier(bytes);
-  const text = { ok: t().meter_ok, large: t().meter_large, low_ecc: t().meter_low_ecc, too_big: t().meter_too_big }[tier];
+  const text = { ok: t().meter_ok, large: t().meter_large, too_big: t().meter_too_big }[tier];
   els.meter.textContent = text(bytes);
   els.meter.classList.toggle('warn', tier !== 'ok');
   els.meter.hidden = false;

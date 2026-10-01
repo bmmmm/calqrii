@@ -50,18 +50,18 @@ for (let y = 0; y < hello.size; y++) {
 }
 deq(rows, HELLO_WORLD_M, 'vendored library reproduces the pinned symbol');
 
-// 2. pinned fixtures
+// 2. pinned fixtures — re-pinned 2026-10-01 for the L-always ECC policy (was M below 1200 bytes)
 const darkCount = (qr) => {
   let n = 0;
   for (let y = 0; y < qr.size; y++) for (let x = 0; x < qr.size; x++) if (qr.getModule(x, y)) n++;
   return n;
 };
 const table = [
-  ['A', serializeEvent(A, OPTS), 415, 16, 81, 'M', 3, 3207],
-  ['B', serializeEvent(B, OPTS), 277, 12, 65, 'M', 6, 2245],
-  ['C', serializeEvent(C, OPTS), 425, 16, 81, 'M', 2, 3251],
-  ['A+B+C', serializeCalendar([A, B, C], OPTS), 963, 25, 117, 'M', 4, 6880],
-  ['B link', linkFor(PAGES_BASE, [B], OPTS.tz), 189, 10, 57, 'M', 2, 1668], // link-mode code: the page URL with B in the fragment
+  ['A', serializeEvent(A, OPTS), 415, 13, 69, 'L', 5, 2398],
+  ['B', serializeEvent(B, OPTS), 277, 11, 61, 'L', 2, 1840],
+  ['C', serializeEvent(C, OPTS), 425, 13, 69, 'L', 3, 2308],
+  ['A+B+C', serializeCalendar([A, B, C], OPTS), 963, 22, 105, 'L', 3, 5410],
+  ['B link', linkFor(PAGES_BASE, [B], OPTS.tz), 189, 8, 49, 'L', 2, 1224], // link-mode code: the page URL with B in the fragment
 ];
 for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {
   const r = encodeQr(text);
@@ -74,23 +74,18 @@ for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {
   eq(r.large, bytes > 500, `${name} large flag`);
 }
 
-// 3. ECC policy and the hard cap
-eq(eccFor(500), 'MEDIUM', '500 → M');
-eq(eccFor(1200), 'MEDIUM', '1200 → M');
-eq(eccFor(1201), 'LOW', '1201 → L');
-eq(eccFor(2953), 'LOW', '2953 → L');
+// 3. ECC policy (L always, boost may raise it) and the hard cap
+deq([0, 500, 1200, 1201, 2953].map(eccFor), ['LOW', 'LOW', 'LOW', 'LOW', 'LOW'], 'eccFor asks for L at every size');
 assert.throws(() => eccFor(2954), (e) => e instanceof RangeError && e.message === 'too_big'); checks++;
 const max = encodeQr('x'.repeat(HARD_LIMIT_BYTES));
 eq(`${max.version}/${max.size}/${max.ecc}`, '40/177/L', '2953 bytes fit v40-L');
 assert.throws(() => qrSvg('x'.repeat(2954)), (e) => e instanceof RangeError && e.message === 'too_big'); checks++;
-const m1200 = encodeQr('x'.repeat(1200));
-const l1201 = encodeQr('x'.repeat(1201));
-ok(m1200.ecc === 'M' && l1201.ecc === 'L', 'threshold flips ECC');
-ok(l1201.version < m1200.version, `L above the threshold is smaller (${l1201.version} < ${m1200.version})`);
+eq(encodeQr('x'.repeat(415)).ecc, 'L', 'a fixture-sized text stays at L');
+eq(`${encodeQr('a').version}/${encodeQr('a').ecc}`, '1/H', 'boostEcl raises the level when the version has room');
 ok(encodeQr('x'.repeat(1201)).large && !encodeQr('x'.repeat(500)).large, 'large above 500 bytes');
 eq(utf8Length('ä🎉'), 6, 'utf8Length counts bytes');
-// the meter's tiers flip exactly where the policy does
-deq([0, 500, 501, 1200, 1201, 2953, 2954].map(sizeTier), ['ok', 'ok', 'large', 'large', 'low_ecc', 'low_ecc', 'too_big'], 'sizeTier thresholds');
+// the meter's tiers: the soft limit and the hard cap, nothing in between
+deq([0, 500, 501, 1200, 1201, 2953, 2954].map(sizeTier), ['ok', 'ok', 'large', 'large', 'large', 'large', 'too_big'], 'sizeTier thresholds');
 
 // 4. SVG geometry per fixture
 const RUN = /M(\d+),(\d+)h(\d+)v1h-(\d+)z/g;

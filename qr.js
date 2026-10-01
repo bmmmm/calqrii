@@ -1,11 +1,15 @@
 // QR rendering on top of the vendored Nayuki encoder (globalThis.qrcodegen,
 // loaded as a classic script before this module runs). Exposes the ECC
 // policy, an exact SVG and the module matrix for PNG export.
+//
+// ECC policy: always request LOW. At a given display size fewer modules read
+// better than more redundancy (measured 2026-10-01 with BarcodeDetector:
+// LOW decoded at smaller widths than MEDIUM for 13 of 15 codes), and the
+// encoder's boostEcl raises the level whenever the chosen version has room.
 
 export const QUIET_ZONE = 4;
-export const SOFT_LIMIT_BYTES = 500;    // above: warn, the camera needs a steady hand
-export const LOW_ECC_ABOVE_BYTES = 1200; // above: ECC L to keep the version down
-export const HARD_LIMIT_BYTES = 2953;   // v40-L byte capacity
+export const SOFT_LIMIT_BYTES = 500;  // above: warn, the camera needs a steady hand
+export const HARD_LIMIT_BYTES = 2953; // v40-L byte capacity
 
 const encoder = new TextEncoder();
 const ECC_LETTER = ['L', 'M', 'Q', 'H'];
@@ -14,16 +18,15 @@ export function utf8Length(text) {
   return encoder.encode(text).length;
 }
 
-/** 'MEDIUM' | 'LOW'; throws RangeError('too_big') above the hard limit. */
+/** Always 'LOW' (see the policy above); throws RangeError('too_big') above the hard limit. */
 export function eccFor(bytes) {
   if (bytes > HARD_LIMIT_BYTES) throw new RangeError('too_big');
-  return bytes > LOW_ECC_ABOVE_BYTES ? 'LOW' : 'MEDIUM';
+  return 'LOW';
 }
 
-/** 'ok' | 'large' | 'low_ecc' | 'too_big' — the tiers encodeQr/eccFor apply, for the editor's payload meter. */
+/** 'ok' | 'large' | 'too_big' — the tiers encodeQr applies, for the editor's payload meter. */
 export function sizeTier(bytes) {
   if (bytes > HARD_LIMIT_BYTES) return 'too_big';
-  if (bytes > LOW_ECC_ABOVE_BYTES) return 'low_ecc';
   return bytes > SOFT_LIMIT_BYTES ? 'large' : 'ok';
 }
 
@@ -37,7 +40,7 @@ export function encodeQr(text) {
   const bytes = utf8Length(text);
   const ecc = eccFor(bytes);
   const { QrCode } = lib();
-  const qr = QrCode.encodeText(text, QrCode.Ecc[ecc]); // boostEcl stays on
+  const qr = QrCode.encodeText(text, QrCode.Ecc[ecc]); // boostEcl stays on: the level rises when the version has room
   return {
     qr,
     bytes,
