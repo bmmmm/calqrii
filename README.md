@@ -54,7 +54,9 @@ type. The meta CSP allows exactly this one host in `connect-src`.
 
 The only way to keep your events is the share link, which carries them in the
 URL `#fragment` (browsers never send fragments in requests). It is still an
-ordinary URL: in your history, and in clear text wherever you paste it.
+ordinary URL: in your history, and in clear text wherever you paste it. Since
+2026-10-01 the fragment is compressed (`v=2`, deflate), which makes link QR
+codes one to four versions smaller; older `v=1` links keep opening.
 
 A link QR code is such a share link. The page that generates it sends
 nothing; the phone that scans it requests this page from its host (for the

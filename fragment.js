@@ -1,10 +1,16 @@
-// Share-link codec: '#v=1&tz=<zone>&e=<base64url(JSON array)>'. The page
+// Share-link codec: '#v=2&tz=<zone>&e=<base64url(deflate-raw(JSON array))>'.
+// Version 1 carried the JSON uncompressed; such links stay readable. The page
 // never writes this to the address bar; it only builds the link on request
 // and reads one on load. Decoding is all-or-nothing: any doubt → bad_link.
+// Compression runs through the platform's CompressionStream, which is
+// asynchronous — so are encodeFragment, linkFor and decodeFragment.
 import { newEvent, validateEvent, isGeo, LIMITS } from './model.js';
 
-export const LINK_VERSION = '1';
+export const LINK_VERSION = '2';
+const READABLE_VERSIONS = ['1', LINK_VERSION];
 export const MAX_E_LENGTH = 100000; // decodeFragment refuses longer payloads; the page must not hand out such a link
+// Inflated JSON above this is refused unread: the largest honest link (200 events at every text cap) stays well below it.
+export const MAX_INFLATED_BYTES = 4 * 1024 * 1024;
 const FREQ_CODE = { daily: 'd', weekly: 'w', monthly: 'm', yearly: 'y' };
 const CODE_FREQ = { d: 'daily', w: 'weekly', m: 'monthly', y: 'yearly' };
 // Wire keys in emission order; the order is part of the format.
@@ -22,6 +28,29 @@ export function b64urlToBytes(s) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function deflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Inflates at most `max` bytes; throws RangeError('inflate') as soon as the output would exceed it. */
+async function inflateRaw(bytes, max) {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > max) { await reader.cancel(); throw new RangeError('inflate'); }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
   return out;
 }
 
@@ -48,19 +77,19 @@ function toWire(ev) {
 }
 
 /** '' when there is nothing to share; otherwise the fragment without '#'. */
-export function encodeFragment({ events, tz }) {
+export async function encodeFragment({ events, tz }) {
   if (!events || events.length === 0) return '';
   const json = JSON.stringify(events.map(toWire));
   const p = new URLSearchParams();
   p.set('v', LINK_VERSION);
   p.set('tz', tz);
-  p.set('e', bytesToB64url(new TextEncoder().encode(json)));
+  p.set('e', bytesToB64url(await deflateRaw(new TextEncoder().encode(json))));
   return p.toString();
 }
 
 /** `base` (origin + path, no '#') + '#' + the fragment of `events`: a share link, or a link-mode QR text. */
-export function linkFor(base, events, tz) {
-  return base + '#' + encodeFragment({ events, tz });
+export async function linkFor(base, events, tz) {
+  return base + '#' + await encodeFragment({ events, tz });
 }
 
 function isValidTz(tz) {
@@ -121,23 +150,36 @@ function fromWire(w) {
  * @returns {{status:'empty'} | {status:'ok', events:object[], tz:string}
  *   | {status:'error', code:'bad_version'|'bad_link', detail?:string}}
  */
-export function decodeFragment(raw) {
+export async function decodeFragment(raw) {
   const fail = (detail) => ({ status: 'error', code: 'bad_link', detail });
   if (typeof raw !== 'string' || raw === '') return { status: 'empty' };
   const p = new URLSearchParams(raw);
   if (!p.has('v') && !p.has('e')) return { status: 'empty' };
   const v = p.get('v');
   if (v === null || !/^[1-9]\d{0,3}$/.test(v)) return fail('v');
-  if (v !== LINK_VERSION) return { status: 'error', code: 'bad_version' };
+  if (!READABLE_VERSIONS.includes(v)) return { status: 'error', code: 'bad_version' };
   const es = p.getAll('e');
   if (es.length !== 1) return fail('e');
   const e = es[0];
   if (e.length > MAX_E_LENGTH || !/^[A-Za-z0-9_-]+$/.test(e)) return fail('e');
   const tz = p.get('tz');
   if (!isValidTz(tz)) return fail('tz');
+  let bytes;
+  try {
+    bytes = b64urlToBytes(e);
+  } catch {
+    return fail('e');
+  }
+  if (v !== '1') {
+    try {
+      bytes = await inflateRaw(bytes, MAX_INFLATED_BYTES);
+    } catch {
+      return fail('inflate');
+    }
+  }
   let arr;
   try {
-    arr = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(b64urlToBytes(e)));
+    arr = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch {
     return fail('json');
   }

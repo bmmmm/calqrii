@@ -6,7 +6,7 @@ import './helpers/load-qrcodegen.mjs';
 import { encodeQr, eccFor, sizeTier, qrSvg, svgPathData, svgFromQr, utf8Length, QUIET_ZONE, HARD_LIMIT_BYTES } from '../qr.js';
 import { serializeEvent, serializeCalendar } from '../ics.js';
 import { linkFor } from '../fragment.js';
-import { OPTS, A, B, C, PAGES_BASE } from './helpers/fixtures.mjs';
+import { OPTS, A, B, C, PAGES_BASE, B_FRAGMENT_V2 } from './helpers/fixtures.mjs';
 
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
@@ -61,7 +61,7 @@ const table = [
   ['B', serializeEvent(B, OPTS), 277, 11, 61, 'L', 2, 1840],
   ['C', serializeEvent(C, OPTS), 425, 13, 69, 'L', 3, 2308],
   ['A+B+C', serializeCalendar([A, B, C], OPTS), 963, 22, 105, 'L', 3, 5410],
-  ['B link', linkFor(PAGES_BASE, [B], OPTS.tz), 189, 8, 49, 'L', 2, 1224], // link-mode code: the page URL with B in the fragment
+  ['B link', PAGES_BASE + '#' + B_FRAGMENT_V2, 169, 8, 49, 'L', 2, 1232], // link-mode code: the page URL with B in the (v2, deflated) fragment
 ];
 for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {
   const r = encodeQr(text);
@@ -73,6 +73,9 @@ for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {
   eq(darkCount(r.qr), dark, `${name} dark modules`);
   eq(r.large, bytes > 500, `${name} large flag`);
 }
+
+// the live encoder agrees with the pinned link text (same zlib → same bytes; a differing zlib would show here first)
+eq(await linkFor(PAGES_BASE, [B], OPTS.tz), PAGES_BASE + '#' + B_FRAGMENT_V2, 'linkFor reproduces the pinned v2 link for B');
 
 // 3. ECC policy (L always, boost may raise it) and the hard cap
 deq([0, 500, 1200, 1201, 2953].map(eccFor), ['LOW', 'LOW', 'LOW', 'LOW', 'LOW'], 'eccFor asks for L at every size');

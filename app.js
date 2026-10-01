@@ -59,6 +59,9 @@ const t = () => STR[lang];
 let els = null;
 let bannerTimer = 0;
 const qrMemo = new Map(); // QR text → qrSvg() result, or { error, bytes }
+const linkMemo = new Map(); // linkKey(events) → link; filled by prepareLinks() before a render (linkFor is async: it compresses)
+let renderSeq = 0; // render() awaits the links; an older render that resumes after a newer one started gives up
+let meterSeq = 0; // same for the payload meter, which measures the draft's own link
 const panelData = new WeakMap(); // [data-qr-panel] → { text, ics, stem }: what was rendered, for the download buttons
 const icsOpts = () => ({ now: SESSION_NOW, tz: state.tz });
 const geoMemo = new Map(); // lang + query → address results, for this page load only (the policy asks for a cache)
@@ -345,10 +348,13 @@ function payloadMeterEvent() {
 }
 
 /** Bytes the QR code of this draft would carry, in the tiers qr.js applies; measures the link when the codes carry links. */
-function renderPayloadMeter() {
+async function renderPayloadMeter() {
   const ev = payloadMeterEvent();
   if (!ev) { els.meter.textContent = ''; els.meter.hidden = true; return; }
-  const bytes = utf8Length(state.payload === 'link' ? eventLink(ev) : serializeEvent(ev, icsOpts()));
+  const seq = ++meterSeq;
+  const payload = state.payload === 'link' ? await linkFor(pageBase(), [ev], state.tz) : serializeEvent(ev, icsOpts());
+  if (seq !== meterSeq) return; // a newer keystroke has its own measurement under way
+  const bytes = utf8Length(payload);
   const tier = sizeTier(bytes);
   const text = { ok: t().meter_ok, large: t().meter_large, too_big: t().meter_too_big }[tier];
   els.meter.textContent = text(bytes);
@@ -481,7 +487,7 @@ function sortEvents() {
   state.events.sort((a, b) => compareDates(a.date, b.date) || a.startTime.localeCompare(b.startTime) || a.id - b.id);
 }
 
-function submitEditor(e) {
+async function submitEditor(e) {
   e.preventDefault();
   const editing = state.editingId !== null;
   state.submitted = true;
@@ -509,12 +515,12 @@ function submitEditor(e) {
   state.editingId = null;
   state.selected.clear();
   resetEditor();
-  render();
+  await render();
   const panel = els.list.querySelector(`[data-id="${firstId}"]`);
   if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function editEvent(id) {
+async function editEvent(id) {
   const ev = state.events.find((x) => x.id === id);
   if (!ev) return;
   state.editingId = id;
@@ -523,7 +529,7 @@ function editEvent(id) {
   state.mode = 'span';
   state.view = { year: Number(ev.date.slice(0, 4)), month: Number(ev.date.slice(5, 7)) };
   clearFeedback();
-  render();
+  await render();
   els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   els.title.focus();
 }
@@ -883,9 +889,9 @@ function setViewQr(btn, panel, ev, open) {
   }
 }
 
-function editShared() {
+async function editShared() {
   state.screen = 'editor';
-  render();
+  await render();
   els.form.scrollIntoView({ block: 'start' });
 }
 
@@ -897,7 +903,10 @@ function startNewEvent() {
   els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function render() {
+async function render() {
+  const seq = ++renderSeq;
+  await prepareLinks();
+  if (seq !== renderSeq) return; // superseded while the links were being built
   const view = state.screen === 'view' && state.events.length > 0;
   els.viewSection.hidden = !view;
   for (const el of [els.calendarSection, els.form, els.eventsSection]) el.hidden = view;
@@ -920,14 +929,33 @@ function pageBase() {
   return location.origin + location.pathname;
 }
 
-/** Built from state.events, never from the form: the link must describe the QR codes on the page. */
+/** Memo key: the zone and the events without their page-local ids. */
+function linkKey(events) {
+  return state.tz + '\n' + JSON.stringify(events.map(({ id, ...ev }) => ev));
+}
+
+/**
+ * Builds the links a render needs — every event's own and the one for all
+ * events — from state.events, never from the form. linkFor compresses, so it
+ * is asynchronous; render() awaits this once and then reads the memo.
+ */
+async function prepareLinks() {
+  if (linkMemo.size >= MEMO_MAX) linkMemo.clear();
+  const sets = [...state.events.map((ev) => [ev]), state.events];
+  await Promise.all(sets.map(async (evs) => {
+    const key = linkKey(evs);
+    if (!linkMemo.has(key)) linkMemo.set(key, await linkFor(pageBase(), evs, state.tz));
+  }));
+}
+
+/** The link for all events, as prepared from state.events: the link must describe the QR codes on the page. */
 function shareURL() {
-  return linkFor(pageBase(), state.events, state.tz);
+  return linkMemo.get(linkKey(state.events)) ?? '';
 }
 
 /** One event's own link: what a link-mode QR carries; it opens the page with exactly this event. */
 function eventLink(ev) {
-  return linkFor(pageBase(), [ev], state.tz);
+  return linkMemo.get(linkKey([ev])) ?? '';
 }
 
 function flash(button, text) {
@@ -941,7 +969,7 @@ function flash(button, text) {
 }
 
 async function copyLink() {
-  const url = shareURL();
+  const url = shareURL() || await linkFor(pageBase(), state.events, state.tz);
   try {
     await navigator.clipboard.writeText(url);
     flash(els.copyLink, t().copied);
@@ -969,16 +997,16 @@ function applyLoaded(res) {
   else hideBanner();
 }
 
-function loadFragment() {
-  const res = decodeFragment(location.hash.slice(1));
+async function loadFragment() {
+  const res = await decodeFragment(location.hash.slice(1));
   if (res.status === 'empty') return false;
   if (res.status === 'error') { showBanner(t()[res.code], [], { error: true }); return false; }
   applyLoaded(res);
   return true;
 }
 
-function onHashChange() {
-  const res = decodeFragment(location.hash.slice(1));
+async function onHashChange() {
+  const res = await decodeFragment(location.hash.slice(1));
   if (res.status === 'empty') return;
   if (res.status === 'error') { showBanner(t()[res.code], [], { error: true }); return; }
   const load = () => { applyLoaded(res); render(); };
@@ -1110,7 +1138,7 @@ function onPanelClick(e) {
 
 // --- boot
 
-function main() {
+async function main() {
   els = {
     banner: $('banner'), calendar: $('calendar'), selInfo: $('sel-info'), clearSel: $('clear-sel'),
     form: $('editor'), title: $('f-title'), allDay: $('f-allday'), daysMode: $('days-mode'),
@@ -1174,9 +1202,7 @@ function main() {
   els.payload.addEventListener('change', (e) => {
     if (e.target.name !== 'payload') return;
     state.payload = e.target.value === 'link' ? 'link' : 'ics';
-    renderList();
-    renderCombined();
-    renderPayloadMeter();
+    render();
   });
   els.copyLink.addEventListener('click', copyLink);
   els.viewList.addEventListener('click', onPanelClick);
@@ -1190,7 +1216,7 @@ function main() {
     if (state.dirty && state.events.length) { e.preventDefault(); e.returnValue = ''; }
   });
 
-  loadFragment();
+  await loadFragment();
   render();
 }
 

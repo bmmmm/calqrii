@@ -173,8 +173,9 @@ function bodyOf(src, fn) {
   // extracted too short (or emptied) fails loudly instead of passing vacuously.
   const gated = [
     ['pageBase', ['location.origin + location.pathname'], [literalOrigin]],
-    ['shareURL', ['linkFor(pageBase(), state.events, state.tz)'], [formRead, literalOrigin]],
-    ['eventLink', ['linkFor(pageBase(), [ev], state.tz)'], [formRead, literalOrigin]],
+    ['prepareLinks', ['linkFor(pageBase(), evs, state.tz)', 'state.events'], [formRead, literalOrigin]],
+    ['shareURL', ['linkMemo.get(linkKey(state.events))'], [formRead, literalOrigin]],
+    ['eventLink', ['linkMemo.get(linkKey([ev]))'], [formRead, literalOrigin]],
     ['renderQrPanel', ['qrFor(text)', 'panelData.set('], [formRead]],
     ['renderList', ['eventLink(ev)'], [formRead]],
     ['renderCombined', ['shareURL()'], [formRead]],
