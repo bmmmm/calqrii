@@ -19,16 +19,17 @@ const eq = (a, b, msg) => { assert.equal(a, b, msg); checks++; };
 eq(serializeEvent(A, OPTS), A_ICS, 'fixture A');
 eq(serializeEvent(B, OPTS), B_ICS, 'fixture B');
 eq(serializeEvent(C, OPTS), C_ICS, 'fixture C');
-eq(bytes(A_ICS), 415, 'A is 415 bytes');
-eq(bytes(B_ICS), 277, 'B is 277 bytes');
-eq(bytes(C_ICS), 425, 'C is 425 bytes');
+// byte pins re-set 2026-10-01: PRODID:calqrii (−16) and no INTERVAL=1 (−11 on series)
+eq(bytes(A_ICS), 399, 'A is 399 bytes');
+eq(bytes(B_ICS), 261, 'B is 261 bytes');
+eq(bytes(C_ICS), 398, 'C is 398 bytes');
 eq(uidFor(A, OPTS), '6db194cd5c7bbcc9@calqrii', 'UID A');
 eq(uidFor(B, OPTS), '5c4978a00ff66a4f@calqrii', 'UID B');
-eq(uidFor(C, OPTS), 'fb1bf38ddbe27857@calqrii', 'UID C');
+eq(uidFor(C, OPTS), '3432947520307809@calqrii', 'UID C');
 
 // 1b. fixture D: a map position becomes GEO between LOCATION and URL, and is part of the UID
 eq(serializeEvent(D, OPTS), D_ICS, 'fixture D');
-eq(bytes(D_ICS), 463, 'D is 463 bytes (339 + the folded Apple location line)');
+eq(bytes(D_ICS), 447, 'D is 447 bytes (323 + the folded Apple location line)');
 eq(uidFor(D, OPTS), '36d83bbefaf9ceb0@calqrii', 'UID D');
 {
   const at = (prefix) => D_VEVENT.findIndex((l) => l.startsWith(prefix));
@@ -154,14 +155,14 @@ ok(serializeEvent(series[1], OPTS).includes('DTEND:20261006T020000\r\n'), 'multi
 
 // 11. formatRrule
 const rec = (o) => ({ freq: 'none', interval: 1, byDay: [], count: null, until: null, ...o });
-eq(formatRrule(rec({ freq: 'daily' }), { allDay: false }), 'FREQ=DAILY;INTERVAL=1', 'daily');
+eq(formatRrule(rec({ freq: 'daily' }), { allDay: false }), 'FREQ=DAILY', 'daily (INTERVAL=1 is the default and stays out)');
 eq(formatRrule(rec({ freq: 'weekly', interval: 2, byDay: ['TU'], until: '2026-12-31' }), { allDay: false }),
   'FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;UNTIL=20261231T235959', 'weekly until timed');
-eq(formatRrule(rec({ freq: 'monthly', until: '2027-06-30' }), { allDay: true }), 'FREQ=MONTHLY;INTERVAL=1;UNTIL=20270630', 'monthly until all-day');
-eq(formatRrule(rec({ freq: 'yearly', count: 5 }), { allDay: false }), 'FREQ=YEARLY;INTERVAL=1;COUNT=5', 'yearly count');
+eq(formatRrule(rec({ freq: 'monthly', until: '2027-06-30' }), { allDay: true }), 'FREQ=MONTHLY;UNTIL=20270630', 'monthly until all-day');
+eq(formatRrule(rec({ freq: 'yearly', count: 5 }), { allDay: false }), 'FREQ=YEARLY;COUNT=5', 'yearly count');
 eq(formatRrule(newEvent({ recurrence: rec({ freq: 'weekly', byDay: ['WE', 'MO'] }) }).recurrence, { allDay: false }),
-  'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE', 'byDay sorted by normalize');
-eq(formatRrule(rec({ freq: 'monthly', byDay: ['MO'] }), { allDay: false }), 'FREQ=MONTHLY;INTERVAL=1', 'byDay ignored outside weekly');
+  'FREQ=WEEKLY;BYDAY=MO,WE', 'byDay sorted by normalize');
+eq(formatRrule(rec({ freq: 'monthly', byDay: ['MO'] }), { allDay: false }), 'FREQ=MONTHLY', 'byDay ignored outside weekly');
 eq(formatRrule(rec({}), { allDay: false }), '', 'none → empty');
 ok(!serializeEvent(A, OPTS).includes('RRULE'), 'no RRULE line without recurrence');
 
@@ -181,7 +182,7 @@ ok(later.includes('DTSTAMP:20260928T081530Z'), 'new DTSTAMP value');
 // 14. calendar wrapper once, bodies identical to the fixture inner parts
 const abc = serializeCalendar([A, B, C], OPTS);
 eq(abc, ABC_ICS, 'ABC fixture');
-eq(bytes(abc), 963, 'ABC is 963 bytes');
+eq(bytes(abc), 936, 'ABC is 936 bytes');
 eq((abc.match(/BEGIN:VCALENDAR/g) || []).length, 1, 'one BEGIN:VCALENDAR');
 eq((abc.match(/END:VCALENDAR/g) || []).length, 1, 'one END:VCALENDAR');
 eq((abc.match(/BEGIN:VEVENT/g) || []).length, 3, 'three VEVENTs');

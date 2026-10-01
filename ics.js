@@ -4,7 +4,7 @@
 // time zone the times were entered in.
 import { addDays, isGeo } from './model.js';
 
-export const PRODID = '-//calqrii//calqrii//EN';
+export const PRODID = 'calqrii'; // free text per RFC 5545 §3.7.3; the short form saves 16 bytes in every code and is not part of the UID
 const MAX_LINE_OCTETS = 75;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -106,7 +106,8 @@ const FREQ_NAMES = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearl
 /** RRULE value (§3.3.10); '' when the event does not repeat. */
 export function formatRrule(rec, { allDay }) {
   if (!rec || rec.freq === 'none') return '';
-  const parts = [`FREQ=${FREQ_NAMES[rec.freq]}`, `INTERVAL=${rec.interval}`];
+  const parts = [`FREQ=${FREQ_NAMES[rec.freq]}`];
+  if (rec.interval > 1) parts.push(`INTERVAL=${rec.interval}`); // 1 is the RFC default (§3.3.10); writing it would only cost bytes
   if (rec.freq === 'weekly' && rec.byDay.length) parts.push(`BYDAY=${rec.byDay.join(',')}`);
   if (rec.count !== null) parts.push(`COUNT=${rec.count}`);
   else if (rec.until !== null) {

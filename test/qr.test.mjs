@@ -50,17 +50,17 @@ for (let y = 0; y < hello.size; y++) {
 }
 deq(rows, HELLO_WORLD_M, 'vendored library reproduces the pinned symbol');
 
-// 2. pinned fixtures — re-pinned 2026-10-01 for the L-always ECC policy (was M below 1200 bytes)
+// 2. pinned fixtures — re-pinned 2026-10-01 for the L-always ECC policy (was M below 1200 bytes), then for PRODID:calqrii and the dropped INTERVAL=1
 const darkCount = (qr) => {
   let n = 0;
   for (let y = 0; y < qr.size; y++) for (let x = 0; x < qr.size; x++) if (qr.getModule(x, y)) n++;
   return n;
 };
 const table = [
-  ['A', serializeEvent(A, OPTS), 415, 13, 69, 'L', 5, 2398],
-  ['B', serializeEvent(B, OPTS), 277, 11, 61, 'L', 2, 1840],
-  ['C', serializeEvent(C, OPTS), 425, 13, 69, 'L', 3, 2308],
-  ['A+B+C', serializeCalendar([A, B, C], OPTS), 963, 22, 105, 'L', 3, 5410],
+  ['A', serializeEvent(A, OPTS), 399, 13, 69, 'L', 5, 2394],
+  ['B', serializeEvent(B, OPTS), 261, 10, 57, 'L', 3, 1588],
+  ['C', serializeEvent(C, OPTS), 398, 13, 69, 'L', 4, 2412],
+  ['A+B+C', serializeCalendar([A, B, C], OPTS), 936, 22, 105, 'L', 4, 5578],
   ['B link', PAGES_BASE + '#' + B_FRAGMENT_V2, 169, 8, 49, 'L', 2, 1232], // link-mode code: the page URL with B in the (v2, deflated) fragment
 ];
 for (const [name, text, bytes, version, size, ecc, mask, dark] of table) {

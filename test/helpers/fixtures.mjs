@@ -44,7 +44,7 @@ export const D = newEvent({
 });
 
 const ics = (lines) => lines.join('\r\n') + '\r\n';
-const HEAD = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//calqrii//calqrii//EN'];
+const HEAD = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:calqrii'];
 
 export const A_VEVENT = [
   'BEGIN:VEVENT',
@@ -70,7 +70,7 @@ export const B_VEVENT = [
 ];
 export const C_VEVENT = [
   'BEGIN:VEVENT',
-  'UID:fb1bf38ddbe27857@calqrii',
+  'UID:3432947520307809@calqrii', // changed 2026-10-01 with INTERVAL=1 leaving the RRULE line (the only hashed line that moved)
   'DTSTAMP:20260927T120000Z',
   'DTSTART:20261005T070000',
   'DTEND:20261005T080000',
@@ -78,7 +78,7 @@ export const C_VEVENT = [
   'DESCRIPTION:Matte mitbringen. Bei Regen in der Turnhalle der Grundschule am',
   String.raw`  Lindenplatz\, Eingang Nord.`,
   String.raw`LOCATION:Stadtpark\, Wiese am Teich`,
-  'RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE;COUNT=10',
+  'RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10',
   'END:VEVENT',
 ];
 
