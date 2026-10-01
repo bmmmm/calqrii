@@ -5,6 +5,7 @@
 // the model cannot express exactly is dropped, not approximated.
 import { normalizeEvent, validateEvent, isValidDate, isValidTime, addDays, compareDates, weekdayOf, presetRule, LIMITS, WEEKDAYS } from './model.js';
 import { zonedToUtc } from './ics.js';
+import { WINDOWS_TZ } from './tzmap.js';
 
 const ICS_RE = /^\s*BEGIN:(VCALENDAR|VEVENT)/im;
 export const MAX_INPUT_CHARS = 2_000_000; // parseInput reports `truncated` beyond this
@@ -88,8 +89,11 @@ export function parseDateTime(value, params, tz, warnings) {
   let wall = null;
   if (m[6] === 'Z') wall = wallClock(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])), tz);
   else if (params.TZID && params.TZID !== tz) {
-    if (isTz(params.TZID)) wall = wallClock(zonedToUtc(date, time, params.TZID), tz);
-    else warnings.add('imp_warn_tz');
+    const tzid = WINDOWS_TZ[params.TZID] ?? params.TZID; // Outlook writes Windows names
+    if (tzid !== tz) {
+      if (isTz(tzid)) wall = wallClock(zonedToUtc(date, time, tzid), tz);
+      else warnings.add('imp_warn_tz');
+    }
   }
   if (!wall) return { date, time, allDay: false, foreign: false, shifted: false };
   return { ...wall, allDay: false, foreign: true, shifted: wall.date !== date };
@@ -108,9 +112,10 @@ const RRULE_KNOWN = new Set(['FREQ', 'INTERVAL', 'BYDAY', 'COUNT', 'UNTIL', 'WKS
 
 /**
  * RRULE → the model's recurrence, or null when the rule says something the
- * model cannot (ordinal BYDAY, BYMONTHDAY, BYSETPOS, INTERVAL or COUNT beyond
- * the editor's range, …): the caller then drops the rule and warns rather
- * than importing a different schedule. A UTC UNTIL is read in `tz`.
+ * model cannot (ordinal BYDAY, BYMONTHDAY, BYSETPOS, …): the caller then drops
+ * the rule and warns rather than importing a different schedule. 'range' when
+ * the only obstacle is INTERVAL or COUNT beyond the editor's range (the
+ * caller drops it too, with a more helpful note). A UTC UNTIL is read in `tz`.
  */
 export function parseRrule(value, start, tz = 'UTC') {
   const parts = {};
@@ -123,7 +128,8 @@ export function parseRrule(value, start, tz = 'UTC') {
   const freq = FREQ_MAP[parts.FREQ];
   if (!freq) return null;
   const interval = parts.INTERVAL === undefined ? 1 : Number(parts.INTERVAL);
-  if (!Number.isInteger(interval) || interval < 1 || interval > 99) return null;
+  if (!Number.isInteger(interval) || interval < 1) return null;
+  let range = interval > 99;
   let byDay = [];
   if (parts.BYDAY !== undefined) {
     if (freq !== 'weekly') return null;
@@ -138,13 +144,14 @@ export function parseRrule(value, start, tz = 'UTC') {
   let until = null;
   if (parts.COUNT !== undefined) {
     count = Number(parts.COUNT);
-    if (!Number.isInteger(count) || count < 1 || count > 999) return null;
+    if (!Number.isInteger(count) || count < 1) return null;
+    if (count > 999) range = true;
   } else if (parts.UNTIL !== undefined) {
     const m = DT_RE.exec(parts.UNTIL);
     if (!m) return null;
     until = m[6] === 'Z' ? wallClock(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])), tz).date : `${m[1]}-${m[2]}-${m[3]}`;
   }
-  return { freq, interval, byDay, count, until };
+  return range ? 'range' : { freq, interval, byDay, count, until };
 }
 
 /**
@@ -238,10 +245,10 @@ function buildEvent({ props, warnings }, tz) {
       // zone keeps its wall clock only until the next DST change, and one whose
       // start moved to another calendar day would run on the wrong weekdays.
       const rec = start.shifted ? null : parseRrule(rrule.value, start.date, tz);
-      if (rec) {
+      if (rec && rec !== 'range') {
         partial.recurrence = rec;
         if (start.foreign) warnings.add('imp_warn_series_tz');
-      } else warnings.add('imp_warn_rule');
+      } else warnings.add(rec === 'range' ? 'imp_warn_rule_range' : 'imp_warn_rule');
       if (first('EXDATE') || first('RDATE')) warnings.add('imp_warn_exdate');
     }
   } else {

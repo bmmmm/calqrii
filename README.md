@@ -58,9 +58,12 @@ series here: a rule the editor cannot express (ordinal weekdays,
 with a note rather than approximated; a series given in another zone or in
 UTC keeps its rule but gets a note (after a daylight-saving change its times
 can be an hour off); skipped, added or moved dates (`EXDATE`, `RDATE`,
-`RECURRENCE-ID`) are not imported, with a note on the series. Windows zone
-names (`W. Europe Standard Time`) are unknown to browsers: the time is taken
-as written, with a note. The page never uses the network (`connect-src
+`RECURRENCE-ID`) are not imported, with a note on the series; a series with
+a `COUNT` above 999 or an interval above 99 is imported as a single event
+with a note. Windows zone
+names from Outlook exports are mapped to IANA zones (Unicode CLDR table in
+`tzmap.js`); only the display form `(UTC+01:00) …` and unknown names keep the
+time as written, with a note. The page never uses the network (`connect-src
 'none'`): the file and the text stay in the browser, the link carries the
 chosen events in its `#fragment` — and, once opened, in the browser history.
 
@@ -136,4 +139,6 @@ specification; see `AGENTS.md` before changing the serializer.
 ## License
 
 GPL-3.0-or-later — see [LICENSE](LICENSE). The bundled QR encoder
-`qrcodegen.js` is by Project Nayuki under the MIT License; see [NOTICE](NOTICE).
+`qrcodegen.js` is by Project Nayuki under the MIT License, and the Windows
+time-zone table `tzmap.js` is derived from Unicode CLDR data (Unicode License
+v3); see [NOTICE](NOTICE).

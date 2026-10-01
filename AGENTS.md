@@ -36,6 +36,8 @@ and the two scripts.
   page zone, DURATION, RRULE subset, VALARM skipped), `parseText` (date/time
   heuristics DE/EN, title before/after layout), `parseInput` (detect, validate,
   past flag). Unsupported input becomes an `imp_warn_*` key, never a silent change.
+- `tzmap.js` — Windows zone name → IANA (Outlook's `TZID`), generated from Unicode
+  CLDR by `scripts/gen-tzmap.mjs` (the only script that needs the network); do not edit.
 - `geocode.js` — opt-in Nominatim address search; the only module that may
   name the network (`fetch` exactly once, one origin — the gate pins both).
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
@@ -45,7 +47,8 @@ and the two scripts.
   evaluates the classic script into `globalThis`; `test/page.test.mjs` pins
   the option lists in `index.html` against the model's constants.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
-  shipped files (both pages: `PAGES` maps each HTML entry to its module); `.github/workflows/pages.yml` runs tests + smoke, then deploys.
+  shipped files (both pages: `PAGES` maps each HTML entry to its module, `PAGE_GRAPH`
+  pins each page's exact module set — a new import is a one-line change there); `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 - `scripts/browser-gate/` — `npm run gate:browser`: headless Chrome over the
   DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes
   every rendered code with `BarcodeDetector` and compares it byte for byte;
@@ -55,7 +58,7 @@ and the two scripts.
 
 Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
 geocode.js`; `import.js → parse.js, fragment.js, i18n.js, model.js`;
-`parse.js → model.js, ics.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
+`parse.js → model.js, ics.js, tzmap.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
 static and relative (`./x.js`).
 
 ## Traps
@@ -69,9 +72,10 @@ static and relative (`./x.js`).
   `shasum -a 256 qrcodegen.js`; no gate enforces it yet). The oracle test in
   `test/qr.test.mjs` proves the encoder still produces the pinned symbol.
 - **Zero storage.** Never add storage APIs, network calls outside
-  `geocode.js`, writes to the address bar/history, HTML string sinks or
+  `geocode.js` (in shipped files; the unshipped `scripts/gen-tzmap.mjs` is the
+  one exception), writes to the address bar/history, HTML string sinks or
   external resources — the smoke gate greps for them and the meta CSP pins
-  the rest. The bare word `fetch` may appear only in `geocode.js`, exactly
+  the rest. The bare word `fetch` may appear only in `geocode.js` (among shipped files), exactly
   once (the injectable default of `searchNominatim`); no other URL in that
   file, not even in a comment; `searchNominatim(` is called once in `app.js`,
   inside `onGeoSearch()`, after the `state.geoConsent` check, and

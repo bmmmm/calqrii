@@ -4,7 +4,7 @@
 // address-bar writes, no HTML string sinks, no external resources), the meta
 // CSP pinned directive by directive, no inline script
 // or handlers, every referenced asset relative and present, the module graph
-// closed over SHIPPED, pages.yml shipping every file, the share link and the
+// closed over SHIPPED and pinned per page (PAGE_GRAPH), pages.yml shipping every file, the share link and the
 // QR panel derived from state only, the serializer importable, and every
 // i18n key the page names present in the string table.
 //
@@ -14,9 +14,14 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const SHIPPED = ['index.html', 'import.html', 'style.css', 'app.js', 'import.js', 'parse.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'geocode.js', 'qr.js', 'i18n.js', 'qrcodegen.js'];
+const SHIPPED = ['index.html', 'import.html', 'style.css', 'app.js', 'import.js', 'parse.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'geocode.js', 'qr.js', 'i18n.js', 'tzmap.js', 'qrcodegen.js'];
 // Every page and its module entry; §2–§5 run per page, the module graphs together must be exactly SHIPPED.
 const PAGES = { 'index.html': 'app.js', 'import.html': 'import.js' };
+// Each page's exact module set (entry, imports, classic scripts). A new import is a one-line change here.
+const PAGE_GRAPH = {
+  'index.html': ['app.js', 'calendar.js', 'ics.js', 'fragment.js', 'qr.js', 'i18n.js', 'geocode.js', 'model.js', 'qrcodegen.js'],
+  'import.html': ['import.js', 'parse.js', 'fragment.js', 'i18n.js', 'model.js', 'ics.js', 'tzmap.js'],
+};
 const EXTRA_SHIPPED = ['favicon.ico', '404.html', 'robots.txt', 'sitemap.xml', 'LICENSE', 'NOTICE'];
 // The one module allowed to use the network, and the one origin it may name.
 const NETWORK_MODULE = 'geocode.js';
@@ -106,33 +111,37 @@ for (const page of Object.keys(PAGES)) {
   else if (!badRefs) ok(`${page}: ${count} relative asset references, all present`);
 }
 
-// --- 5. module graph: static relative imports only, closed over SHIPPED
+// --- 5. module graph: static relative imports only, closed over SHIPPED, pinned per page
 {
   const seen = new Set(['style.css', ...Object.keys(PAGES)]);
-  const queue = [];
+  let bad = 0;
   for (const [page, entry] of Object.entries(PAGES)) {
     const scripts = [...stripComments(page).matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
     if (!scripts.includes(entry)) fail(`${page} does not load its entry ${entry}`);
-    for (const s of scripts) seen.add(s);
-    queue.push(entry);
-  }
-  let bad = 0;
-  while (queue.length) {
-    const name = queue.shift();
-    if (!SHIPPED.includes(name)) { fail(`${name} is imported but not in SHIPPED`); bad++; continue; }
-    seen.add(name);
-    for (const m of read(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
-      const spec = m[1];
-      if (!spec.startsWith('./') || spec.includes('/', 2)) { fail(`${name} imports ${spec}: only ./x.js is allowed`); bad++; continue; }
-      const dep = spec.slice(2);
-      if (!seen.has(dep) && !queue.includes(dep)) queue.push(dep);
+    const reached = new Set(scripts);
+    const queue = [entry];
+    while (queue.length) {
+      const name = queue.shift();
+      if (!SHIPPED.includes(name)) { fail(`${name} is imported but not in SHIPPED`); bad++; continue; }
+      reached.add(name);
+      for (const m of read(name).matchAll(/\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm)) {
+        const spec = m[1] ?? m[2];
+        if (!spec.startsWith('./') || spec.includes('/', 2)) { fail(`${name} imports ${spec}: only ./x.js is allowed`); bad++; continue; }
+        const dep = spec.slice(2);
+        if (!reached.has(dep) && !queue.includes(dep)) queue.push(dep);
+      }
     }
+    for (const n of reached) seen.add(n);
+    const want = [...PAGE_GRAPH[page]].sort();
+    const got = [...reached].filter((n) => n.endsWith('.js')).sort();
+    if (JSON.stringify(got) !== JSON.stringify(want)) { fail(`${page} module graph is ${got.join(', ')}; pinned: ${want.join(', ')}`); bad++; }
+    else ok(`${page} loads exactly its pinned ${want.length} modules`);
   }
   const missing = SHIPPED.filter((n) => !seen.has(n));
   const extra = [...seen].filter((n) => !SHIPPED.includes(n));
   if (missing.length) { fail(`SHIPPED files never reached from a page: ${missing.join(', ')}`); bad++; }
   if (extra.length) { fail(`files reached from a page but not in SHIPPED: ${extra.join(', ')}`); bad++; }
-  if (!bad) ok(`module graphs from ${Object.keys(PAGES).join(' and ')} are exactly SHIPPED (${SHIPPED.length} files)`);
+  if (!bad) ok(`module graphs from ${Object.keys(PAGES).join(' and ')} cover exactly SHIPPED (${SHIPPED.length} files)`);
 }
 
 // --- 6. pages.yml ships every file

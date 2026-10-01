@@ -136,12 +136,30 @@ const FOREIGN = [
   'DTEND;TZID=Europe/Berlin:20261104T180000',
   'SUMMARY:Ende vor Anfang',
   'END:VEVENT',
+  'BEGIN:VEVENT',
+  'UID:13@club',
+  'DTSTART;TZID=Europe/Berlin:20261005T070000',
+  'SUMMARY:Daily for three years',
+  'RRULE:FREQ=DAILY;COUNT=1095',
+  'END:VEVENT',
+  'BEGIN:VEVENT',
+  'UID:14@club',
+  'DTSTART;TZID=W. Europe Standard Time:20261105T190000',
+  'SUMMARY:Outlook Berlin',
+  'RRULE:FREQ=WEEKLY',
+  'END:VEVENT',
+  'BEGIN:VEVENT',
+  'UID:15@club',
+  'DTSTART;TZID=Pacific Standard Time:20261110T180000',
+  'DTEND;TZID=Pacific Standard Time:20261110T190000',
+  'SUMMARY:Outlook Pacific',
+  'END:VEVENT',
   'END:VCALENDAR',
 ].join('\r\n') + '\r\n';
 {
   const items = parseIcs(FOREIGN, { tz: TZ });
-  eq(items.length, 13, 'thirteen events, the VALARM is not one');
-  const [mv, frei, tr, first, call, mars, la, master, moved, dst, badTime, threeDays, endBefore] = items;
+  eq(items.length, 16, 'sixteen events, the VALARM is not one');
+  const [mv, frei, tr, first, call, mars, la, master, moved, dst, badTime, threeDays, endBefore, tooMany, winBerlin, winPacific] = items;
   deq(strip(mv.ev), strip(newEvent({
     title: 'Mitgliederversammlung, Teil 1', date: '2026-10-05', startTime: '19:00', endTime: '21:30',
     description: 'Tagesordnung:\n1. Bericht\n2. Wahlen; Anträge bis Friday. Dieser Text ist über zwei Zeilen gefaltet.'.replace('Friday', 'Freitag'),
@@ -164,6 +182,13 @@ const FOREIGN = [
   deq([badTime.ev.date, badTime.warnings], ['', ['imp_warn_start']], 'an impossible time is no start');
   deq([threeDays.ev.allDay, threeDays.ev.endDate, threeDays.ev.recurrence.freq, threeDays.warnings], [true, '2026-11-03', 'yearly', ['imp_warn_exdate']], 'all-day DURATION P3D ends two days later; RDATE alone is reported');
   deq([endBefore.ev.endDate, endBefore.ev.endTime], ['2026-11-05', '18:00'], 'DTEND before DTSTART: the date is clamped (the time error is for validation)');
+  deq([tooMany.ev.recurrence.freq, tooMany.warnings], ['none', ['imp_warn_rule_range']], 'a series beyond the editor range is dropped with its own reason, not clamped');
+  deq([winBerlin.ev.date, winBerlin.ev.startTime, winBerlin.warnings], ['2026-11-05', '19:00', []], 'a Windows zone name that maps to the page zone: time as written, no warning (also for a series: not a foreign zone)');
+  deq([winPacific.ev.date, winPacific.ev.startTime, winPacific.ev.endTime, winPacific.warnings], ['2026-11-11', '03:00', '04:00', []], 'a Windows zone name is converted like its IANA zone');
+}
+{
+  const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:u', 'DTSTART;TZID=UTC:20261005T190000', 'SUMMARY:x', 'RRULE:FREQ=WEEKLY', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  deq(parseIcs(ics, { tz: 'UTC' })[0].warnings, [], 'a TZID equal to the page zone is not foreign, even when it is also a Windows key (UTC)');
 }
 eq(unescapeText(String.raw`a\\b\;c\,d\ne\Nf`), 'a\\b;c,d\ne\nf', 'unescape all five');
 
@@ -174,9 +199,12 @@ eq(parseRrule('FREQ=DAILY;UNTIL=20261230T233000Z', '2026-12-01', TZ).until, '202
 eq(parseRrule('FREQ=DAILY;UNTIL=20261230', '2026-12-01', TZ).until, '2026-12-30', 'a date UNTIL stays');
 eq(parseRrule('FREQ=DAILY;UNTIL=garbage', '2026-12-01', TZ), null, 'malformed UNTIL refuses the rule instead of making it endless');
 eq(parseRrule('FREQ=DAILY;INTERVAL=0', '2026-10-05'), null, 'INTERVAL 0 refused');
-eq(parseRrule('FREQ=DAILY;INTERVAL=100', '2026-10-05'), null, 'INTERVAL above the editor range refused');
+eq(parseRrule('FREQ=DAILY;INTERVAL=100', '2026-10-05'), 'range', 'INTERVAL above the editor range: refused as range');
 eq(parseRrule('FREQ=DAILY;COUNT=0', '2026-10-05'), null, 'COUNT 0 refused');
-eq(parseRrule('FREQ=DAILY;COUNT=1000', '2026-10-05'), null, 'COUNT above the editor range refused');
+eq(parseRrule('FREQ=DAILY;COUNT=1000', '2026-10-05'), 'range', 'COUNT above the editor range: refused as range');
+eq(parseRrule('FREQ=DAILY;COUNT=999', '2026-10-05').count, 999, 'COUNT at the editor limit is kept');
+eq(parseRrule('FREQ=DAILY;INTERVAL=99', '2026-10-05').interval, 99, 'INTERVAL at the editor limit is kept');
+eq(parseRrule('FREQ=WEEKLY;INTERVAL=100;BYDAY=1MO', '2026-10-05'), null, 'a range overrun next to an unsupported part is plainly unsupported');
 eq(parseRrule('FREQ=WEEKLY;BYDAY=TU', '2026-10-05'), null, 'BYDAY without the start weekday is refused');
 eq(parseRrule('FREQ=WEEKLY;BYDAY=1MO', '2026-10-05'), null, 'ordinal BYDAY is refused even in a weekly rule');
 eq(parseRrule('FREQ=MONTHLY;BYMONTHDAY=15', '2026-10-05'), null, 'BYMONTHDAY unsupported');
