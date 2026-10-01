@@ -475,12 +475,24 @@ export function parseDateLine(line, today) {
   return { date, endDate, startTime, endTime, allDay: startTime === '', title: titleOf(rest), warnings };
 }
 
+/** The most frequent number of lines between two date lines (the first one on a tie). */
+function usualGap(anchors) {
+  const counts = new Map();
+  for (let k = 1; k < anchors.length; k++) {
+    const g = anchors[k] - anchors[k - 1] - 1;
+    counts.set(g, (counts.get(g) ?? 0) + 1);
+  }
+  let best = null;
+  for (const [g, n] of counts) if (best === null || n > counts.get(best)) best = g;
+  return best;
+}
+
 /**
  * A copied event list → [{ ev, warnings }]. Every line with a date starts an
  * event; its other words are the title. Lines without a date belong to the
  * nearest date line: after it (title when the date line had none, "Ort:" as
  * the location, the rest as description) — or, when no date line carries a
- * title of its own and that reading leaves fewer events untitled, the line before it.
+ * title of its own and the list's shape says so (usualGap), the line before it.
  */
 export function parseText(text, { today }) {
   const lines = text.split(/\r?\n/).map((l) => l.slice(0, MAX_LINE_CHARS).replace(/\s+/g, ' ').trim()).filter((l) => l !== '');
@@ -489,11 +501,15 @@ export function parseText(text, { today }) {
   parsed.forEach((p, i) => { if (p) anchors.push(i); });
   if (anchors.length === 0) return [];
   const untitled = anchors.every((i) => parsed[i].title === '');
-  // Title line before or after the date line: the reading that leaves fewer events without one. A tie keeps
-  // "after": a heading like "Termine" above an after-layout list would otherwise title the first event and shift the rest.
-  const untitledAfter = anchors.filter((i, k) => (anchors[k + 1] ?? lines.length) === i + 1).length;
-  const untitledBefore = anchors.filter((i) => i === 0 || parsed[i - 1]).length;
-  const titleBefore = untitled && untitledBefore < untitledAfter;
+  // Title line before or after the date line, read from the shape: the usual gap between two date lines holds the
+  // end of one event (as many lines as follow the last date line) and the start of the next. Titles stand before
+  // when that start is at least one line and fits above the first date line (the rest there is a heading). A
+  // heading above a title-after list ("Termine", then date, title, …) leaves no start: the gap is all event end.
+  const lead = anchors[0];
+  const tail = lines.length - 1 - anchors[anchors.length - 1];
+  // A single date line has no gap to read: a line above it is its title, as before.
+  const above = anchors.length > 1 ? usualGap(anchors) - tail : 0;
+  const titleBefore = untitled && (anchors.length === 1 || (above > 0 && above <= lead));
   const items = [];
   anchors.forEach((i, k) => {
     const p = parsed[i];

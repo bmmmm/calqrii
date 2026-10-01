@@ -323,7 +323,15 @@ const before = ['Grillfest', '05.10.2026 19:00', 'Hüttenwochenende', '17.10.202
   // ssfbonn.de/de/termine as copied (2026-10-01): a heading, then date line and title line per event.
   const ssf = ['Termine', '28.09.2026 (19:00 – 21:00)', 'Mitgliederinformationsveranstaltung', '26.10.2026 (09:00) – 30.10.2026 (16:00)', 'Feriencamp im Sportpark Nord', '29.10.2026 (18:00 – 19:30)', 'Datenschutzschulung'].join('\n');
   deq(parseText(ssf, { today: TODAY }).map((i) => i.ev.title), ['Mitgliederinformationsveranstaltung', 'Feriencamp im Sportpark Nord', 'Datenschutzschulung'], 'a heading above a title-after list does not shift the titles');
-  deq(parseText(['01.10.2026', 'A', '02.10.2026', 'B', '03.10.2026'].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['A', 'B', ''], 'one untitled event either way: the tie keeps the after reading');
+  deq(parseText(['01.10.2026', 'A', '02.10.2026', 'B', '03.10.2026'].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['A', 'B', ''], 'nothing above the first date line: titles follow');
+  const titles = (lines) => parseText(lines.join('\n'), { today: TODAY }).map((i) => i.ev.title);
+  // Title-before lists with one more line per event (found by review: the first rule of this commit read them as title-after).
+  deq(titles(['Grillfest', '12.10.2026 18 Uhr', 'Im Garten', 'Flohmarkt', '17.10.2026 10 Uhr', 'Alles muss raus']), ['Grillfest', 'Flohmarkt'], 'title before, a description after');
+  deq(titles(['A', '01.11.2026 10:00', 'Ort: X', 'B', '02.11.2026 10:00', 'Ort: Y', 'C', '03.11.2026 10:00', 'Ort: Z']), ['A', 'B', 'C'], 'title before, a location after');
+  deq(titles(['Termine', '01.11.2026 10:00', 'A', 'da', '02.11.2026 10:00', 'B', 'db', '03.11.2026 10:00', 'C', 'dc']), ['A', 'B', 'C'], 'heading, then title and description after');
+  deq(titles(['Termine', '01.11.2026 10:00', 'A', 'da', '02.11.2026 10:00', 'B', 'db', '03.11.2026 10:00', 'C', 'dc', 'dc2', '04.11.2026 10:00', 'D', 'dd']), ['A', 'B', 'C', 'D'], 'the most frequent gap decides, not the last one');
+  deq(titles(['Termine', '01.11.2026 10:00', 'A', 'da', 'db', '02.11.2026 10:00', 'B', 'da', 'db', '03.11.2026 10:00', 'C']), ['A', 'B', 'C'], 'a start longer than the lines above the first date line is no title-before list');
+  deq(titles(['Grillfest', '05.10.2026 19:00', 'Im Garten']), ['Grillfest'], 'a single date line: the line above titles it');
   deq(parseText(['Termine', ...before.split('\n')].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['Grillfest', 'Hüttenwochenende', 'Vorstandssitzung'], 'a heading above a title-before list keeps the before reading');
 }
 deq(parseText('Nur Text ohne ein Datum.\nNoch eine Zeile.', { today: TODAY }), [], 'no date, no events');
