@@ -319,10 +319,11 @@ const pad2 = (n) => String(n).padStart(2, '0');
 // A whole month name or its abbreviation in either language, nothing else: "Marktplatz 5",
 // "Junkerweg 4" or "3. Marathon" must not read as dates. Longest form first, then a letter guard.
 const WORD = String.raw`(?:januar|january|jan|februar|february|feb|märz|mär|mrz|march|mar|april|apr|mai|may|juni|june|jun|juli|july|jul|august|aug|september|sept|sep|oktober|okt|october|oct|november|nov|dezember|dez|december|dec)(?![a-zäöüß])`;
-// Two digits that start a time: an hour 00–23, then ":00", ".30" (the chain ends there), " Uhr", or "-20 Uhr" /
-// " bis 20 Uhr". "14.10.19.30 Chor" and the address "10.1.10.11" look alike; both read as a date, since a visible
-// wrong event can be deselected and a dropped one is lost in the previous event's description.
-const HOUR = String.raw`(?:[01]\d|2[0-3])(?::\d\d|\.\d\d(?![.\d])|\s*Uhr\b|\s*(?:[-–]|bis)\s*\d{1,2}(?:[:.]\d\d)?\s*Uhr\b)`;
+// Digits that start a time: an hour 00–23, then ":00", ".30" (the chain ends there), " Uhr", "h", "pm" (glued: German
+// "05.11.21 am Rathaus" keeps its year), or "-20 Uhr" / " bis 20 Uhr"; a one-digit hour with ":00" or "pm". "14.10.19.30 Chor" and the address "10.1.10.11" look alike;
+// both read as a date, since a visible wrong event can be deselected and a dropped one is lost in the previous
+// event's description.
+const HOUR = String.raw`(?:(?:[01]\d|2[0-3])(?::\d\d|\.\d\d(?![.\d])|\s*Uhr\b|\s?h\b|[ap]\.?m\b|\s*(?:[-–]|bis)\s*\d{1,2}(?:[:.]\d\d)?\s*Uhr\b)|\d(?::\d\d|[ap]\.?m\b))`;
 // Every shape of a date; the alternation order decides which reading wins when two overlap.
 const DATE_RE = new RegExp([
   String.raw`\b(\d{4})-(\d{2})-(\d{2})\b`,                       // 1-3   ISO
@@ -330,14 +331,23 @@ const DATE_RE = new RegExp([
   // "20.11.18:00") or go on ("1.2.10.11") are no year; without a year only such a time may follow at once, any
   // other digit ("Version 2.3.4.5") ends the match.
   String.raw`(?<!\d\.)\b(\d{1,2})\.\s?(\d{1,2})\.(?:\s?(\d{4}|(?!${HOUR})\d{2}(?![.:]\d)))?(?!(?!${HOUR})\d)`,
-  String.raw`\b(\d{1,2})\.\s*(${WORD})\.?(?:\s+(\d{4}))?(?!\d)`,  // 7-9   D. Monat (YYYY)
+  // 7-9 D. Monat (YYYY); without the dot ("12 October 2026") only before a year or a time: "under 12 may attend",
+  // "Raum 4 Jan" and "Halle 3 Mai" are no dates.
+  String.raw`\b(\d{1,2})(?:\.\s*|\s+(?=${WORD}\.?\s+(?:\d{4}\b|\d{1,2}[:.]\d\d)))(${WORD})\.?(?:\s+(\d{4}))?(?!\d)`,
   String.raw`\b(${WORD})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b,?(?:\s+(\d{4}))?`, // 10-12 Month D(, YYYY)
 ].join('|'), 'gi');
 const RANGE_SEP = String.raw`\s*(?:–|—|-|bis|to|through)\s*`;
 const DAY_BEFORE_RE = new RegExp(String.raw`(\d{1,2})\.(?:\s?(\d{1,2})\.)?${RANGE_SEP}$`); // "17.–" or "17.10.–" right before the end date
 // "18:30", "18.30 Uhr", "19 Uhr", "7pm"; the dotted form counts only on a line that says "Uhr" somewhere (else "12.50 Euro" would be a time).
-const TIME_RE = new RegExp(String.raw`\b(\d{1,2})(?::(\d{2})|\.(\d{2}))\s*(?:Uhr|([ap])\.?m\b)?|\b(\d{1,2})\s*(?:Uhr|([ap])\.?m\b)`, 'gi');
+const TIME_RE = new RegExp(String.raw`\b(\d{1,2})(?::(\d{2})|\.(\d{2}))\s*(?:Uhr|h\b|([ap])\.?m\b)?|\b(\d{1,2})\s*(?:Uhr|([ap])\.?m\b)`, 'gi');
 const UHR_RE = /\bUhr\b/i;
+// The bare start hour of "18-20 Uhr" / "18 bis 20 Uhr": the "Uhr" after the end hour holds for both.
+const RANGE_HOUR_RE = /\b(\d{1,2})(?=\s*(?:[-–]|bis)\s*(\d{1,2})(?:[:.]\d{2})?\s*Uhr\b)/gi;
+const RANGE_LEAD_RE = /(?:^|\s)(?:von|ab|um|from|zwischen|ca|Mo|Di|Mi|Do|Fr|Sa|So|Mon|Tue|Wed|Thu|Fri|Sat|Sun|Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag)\.?,?$/i;
+// "18h", "18 h" right behind the date, on a line without another time ("9:30h" is TIME_RE's): a two-digit hour.
+// "2h Workshop", "3 h" and "Dauer 3 h" elsewhere are durations; "12h Lauf, Start 9 Uhr" starts at 9.
+const H_TIME_RE = /^[\s,]*(?:(?:um|ab|at|from)\s+)?(?:(\d{2})(?::(\d{2}))?h|(\d{2})(?::(\d{2}))?\s+h)\b/i;
+const LONG_SPAN_DAYS = 92; // longer spans get imp_warn_long: an end without a year rolls forward, a typo would too
 // The gap between two dates or two times is a range only when it is nothing but a separator: "– Grillfest (Ausweichtermin 12.10.)" is not.
 const GAP_RE = new RegExp(String.raw`^${RANGE_SEP}$`);
 const GLUE_RE = /\b(?:Uhr|ab|um|am|vom|von|bis|to|at|from|on)\b/gi;
@@ -389,7 +399,17 @@ function findTimes(line, dottedOk = UHR_RE.test(line)) {
     if (h > 23 || mi > 59) continue;
     out.push({ index: m.index, end: m.index + m[0].length, time: `${pad2(h)}:${pad2(mi)}` });
   }
-  return out;
+  RANGE_HOUR_RE.lastIndex = 0;
+  for (const m of line.matchAll(RANGE_HOUR_RE)) {
+    // A start hour, not a room ("Saal 3 – 19 Uhr"): at most 12 hours before the end, and not right behind a word
+    // other than glue or a weekday.
+    const span = +m[2] - +m[1];
+    if (+m[1] > 23 || span <= 0 || span > 12 || out.some((t) => t.index <= m.index && m.index < t.end)) continue;
+    const before = line.slice(0, m.index).trimEnd();
+    if (/\p{L}\.?,?$/u.test(before) && !RANGE_LEAD_RE.test(before)) continue;
+    out.push({ index: m.index, end: m.index + m[0].length, time: `${pad2(+m[1])}:00` });
+  }
+  return out.sort((a, b) => a.index - b.index);
 }
 
 const blank = (s, from, to) => s.slice(0, from) + ' '.repeat(to - from) + s.slice(to);
@@ -433,7 +453,7 @@ export function parseDateLine(line, today) {
   const second = dates[1];
   let rest = line;
   // "D.M. – D.M.YYYY": a start without a year takes the end's year (the one before it when the span crosses New Year).
-  const plainRange = second && isGap(line.slice(first.end, second.index));
+  const plainRange = second && isGap(line.slice(first.end, second.index).replace(WEEKDAY_RE, ' ')); // "Fr 23.10. – So 25.10."
   const timed = second && !plainRange ? timedSpan(line, first, second) : null;
   const rangeToSecond = plainRange || timed !== null;
   let year;
@@ -448,9 +468,9 @@ export function parseDateLine(line, today) {
   rest = blank(rest, first.index, first.end);
   if (rangeToSecond) {
     let d2 = isoOf(second, second.year ?? year);
-    // "30.12.–2.1.": an end without a year before a start in November or December is in January or February of
-    // the next year; any other reversed end stays as written, and validation refuses it.
-    if (d2 && date && second.year === null && compareDates(d2, date) < 0 && first.month >= 11 && second.month <= 2) d2 = isoOf(second, year + 1);
+    // An end without a year is its next occurrence from the start, as in a calendar: "20.10.–3.1." ends in January.
+    // A reversed end with its year written stays as written, and validation refuses it.
+    if (d2 && date && second.year === null && compareDates(d2, date) < 0) d2 = isoOf(second, year + 1);
     if (d2) { endDate = d2; rest = blank(rest, first.end, second.end); }
   } else {
     // "17.–18.10.2026", "17. – 18. Oktober": the first token is the end, the day before it the start.
@@ -469,10 +489,16 @@ export function parseDateLine(line, today) {
   let startTime = '';
   let endTime = '';
   const times = timed ? [] : findTimes(rest);
+  // Right behind the date (a range's gap and end date are blanked already); a written time elsewhere wins.
+  const hMatch = timed || times.length ? null : H_TIME_RE.exec(rest.slice(first.end));
+  const hTime = hMatch && [hMatch[0], hMatch[1] ?? hMatch[3], hMatch[2] ?? hMatch[4]];
   if (timed) {
     startTime = timed.startTime;
     endTime = timed.endTime;
     rest = blank(rest, second.end, timed.end);
+  } else if (hTime && +hTime[1] <= 23 && +(hTime[2] ?? 0) <= 59) {
+    startTime = `${pad2(+hTime[1])}:${hTime[2] ?? '00'}`;
+    rest = blank(rest, first.end, first.end + hTime[0].length);
   } else if (times.length) {
     startTime = times[0].time;
     rest = blank(rest, times[0].index, times[0].end);
@@ -482,6 +508,7 @@ export function parseDateLine(line, today) {
       rest = blank(rest, times[0].end, t2.end);
     }
   }
+  if (compareDates(endDate, addDays(date, LONG_SPAN_DAYS)) > 0) warnings.add('imp_warn_long');
   return { date, endDate, startTime, endTime, allDay: startTime === '', title: titleOf(rest), warnings };
 }
 
