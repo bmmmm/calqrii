@@ -113,17 +113,27 @@ try {
     return false;
   }
   // The Python dev server now and then resets a module load; a reload cures it.
-  let attempt = 1;
-  for (; attempt <= 5; attempt++) {
-    if (attempt === 1) await t.send('Page.navigate', { url: BASE + '#' + fragment });
-    else await t.send('Page.reload', { ignoreCache: true });
-    await sleep(300);
-    if (await waitFor(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) break;
-    log('view not ready, retry', attempt);
+  async function loadView() {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      // a failed attempt leaves its net::ERR_CONNECTION_RESET in the log; only the attempt that loads is judged
+      requests.length = 0; logEntries.length = 0; exceptions.length = 0;
+      if (attempt === 1) await t.send('Page.navigate', { url: BASE + '#' + fragment });
+      else await t.send('Page.reload', { ignoreCache: true });
+      await sleep(300);
+      if (await waitFor(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) return attempt;
+      log('view not ready, retry', attempt);
+    }
+    throw new Error('page never reached the view screen');
   }
-  if (attempt > 5) throw new Error('page never reached the view screen');
-  ok(`view shows ${EVENTS.length} events (load attempts: ${attempt})`);
+  ok(`view shows ${EVENTS.length} events (load attempts: ${await loadView()})`);
 
+  // "New event" from the view: the form must be visible and focused once the (asynchronous) render is through
+  phase = 'nav';
+  await t.evaluate(`document.querySelector('#view-new').click(), true`);
+  if (await waitFor(`!document.querySelector('#view-section').hidden === false && document.activeElement && document.activeElement.id === 'f-title'`, 2000)) ok('"New event" from the view shows the form and focuses the title');
+  else fail(`"New event" from the view: form hidden=${await t.evaluate(`document.querySelector('form').hidden`)}, focus on ${await t.evaluate(`document.activeElement && (document.activeElement.id || document.activeElement.tagName)`)}`);
+
+  await loadView();
   phase = 'editor';
   await t.evaluate(`document.querySelector('#view-edit').click(), true`);
   if (!await waitFor(`document.querySelectorAll('[data-qr-panel] .qr svg').length >= ${EVENTS.length}`)) throw new Error('editor codes not rendered');

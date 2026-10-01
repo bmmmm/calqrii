@@ -349,9 +349,9 @@ function payloadMeterEvent() {
 
 /** Bytes the QR code of this draft would carry, in the tiers qr.js applies; measures the link when the codes carry links. */
 async function renderPayloadMeter() {
+  const seq = ++meterSeq; // before the early return: an in-flight measurement must not un-hide the meter
   const ev = payloadMeterEvent();
   if (!ev) { els.meter.textContent = ''; els.meter.hidden = true; return; }
-  const seq = ++meterSeq;
   const payload = state.payload === 'link' ? await linkFor(pageBase(), [ev], state.tz) : serializeEvent(ev, icsOpts());
   if (seq !== meterSeq) return; // a newer keystroke has its own measurement under way
   const bytes = utf8Length(payload);
@@ -538,7 +538,7 @@ function cancelEdit() {
   state.editingId = null;
   state.selected.clear();
   resetEditor();
-  render();
+  return render();
 }
 
 function duplicateEvent(id) {
@@ -896,9 +896,9 @@ async function editShared() {
 }
 
 /** A fresh form: drops an edit in progress, keeps the events, lands the cursor in the title. */
-function startNewEvent() {
+async function startNewEvent() {
   state.screen = 'editor';
-  cancelEdit();
+  await cancelEdit(); // the form is hidden in the view until this render
   els.title.focus({ preventScroll: true });
   els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

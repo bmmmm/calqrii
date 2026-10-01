@@ -15,8 +15,8 @@ node test/ics.test.mjs                          # one suite
 python3 -m http.server 8765 --bind 127.0.0.1    # dev server (open http://127.0.0.1:8765/)
 ```
 
-Node ≥ 20, nothing to install. `package.json` exists only for `"type": "module"`
-and the test script.
+Node ≥ 22, nothing to install. `package.json` exists only for `"type": "module"`
+and the two scripts.
 
 ## Map
 
@@ -27,7 +27,7 @@ and the test script.
   helpers behind the duration select and the repeat presets.
 - `ics.js` — RFC 5545 serializer: escaping, 75-octet folding, UTC/floating
   dates, RRULE, content-hashed UID.
-- `fragment.js` — share-link codec `#v=1&tz=…&e=<base64url(JSON)>`; `linkFor`
+- `fragment.js` — share-link codec `#v=2&tz=…&e=<base64url(deflate-raw(JSON))>`, v=1 (plain JSON) still read, async; `linkFor`
   builds a share link or a link-mode QR text from a page base.
 - `geocode.js` — opt-in Nominatim address search; the only module that may
   name the network (`fetch` exactly once, one origin — the gate pins both).

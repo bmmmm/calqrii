@@ -3,14 +3,20 @@
 // never writes this to the address bar; it only builds the link on request
 // and reads one on load. Decoding is all-or-nothing: any doubt → bad_link.
 // Compression runs through the platform's CompressionStream, which is
-// asynchronous — so are encodeFragment, linkFor and decodeFragment.
+// asynchronous — so are encodeFragment, linkFor and decodeFragment. A browser
+// without it (Safari before 16.4, Chrome before 103) writes version-1 links and
+// answers a version-2 link with 'bad_browser' instead of failing silently.
 import { newEvent, validateEvent, isGeo, LIMITS } from './model.js';
 
 export const LINK_VERSION = '2';
 const READABLE_VERSIONS = ['1', LINK_VERSION];
 export const MAX_E_LENGTH = 100000; // decodeFragment refuses longer payloads; the page must not hand out such a link
-// Inflated JSON above this is refused unread: the largest honest link (200 events at every text cap) stays well below it.
+// Inflation stops as soon as the output passes this: the largest honest link (200 events at every text cap) stays well below it.
 export const MAX_INFLATED_BYTES = 4 * 1024 * 1024;
+const INFLATE_SLICE = 1024; // compressed bytes per step; deflate expands at most ~1032:1, so a step adds at most ~1 MiB before the cap is checked again
+
+const canDeflate = () => typeof CompressionStream === 'function';
+const canInflate = () => typeof DecompressionStream === 'function';
 const FREQ_CODE = { daily: 'd', weekly: 'w', monthly: 'm', yearly: 'y' };
 const CODE_FREQ = { d: 'daily', w: 'weekly', m: 'monthly', y: 'yearly' };
 // Wire keys in emission order; the order is part of the format.
@@ -36,9 +42,21 @@ async function deflateRaw(bytes) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** Inflates at most `max` bytes; throws RangeError('inflate') as soon as the output would exceed it. */
+/**
+ * Inflates at most `max` bytes; throws RangeError('inflate') as soon as the
+ * output exceeds it. The input is fed in small slices so that a crafted
+ * payload is abandoned after the first few, not inflated whole.
+ */
 async function inflateRaw(bytes, max) {
-  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  let pos = 0;
+  const source = new ReadableStream({
+    pull(controller) {
+      if (pos >= bytes.length) { controller.close(); return; }
+      controller.enqueue(bytes.subarray(pos, pos + INFLATE_SLICE));
+      pos += INFLATE_SLICE;
+    },
+  });
+  const reader = source.pipeThrough(new DecompressionStream('deflate-raw')).getReader();
   const chunks = [];
   let total = 0;
   for (;;) {
@@ -79,11 +97,11 @@ function toWire(ev) {
 /** '' when there is nothing to share; otherwise the fragment without '#'. */
 export async function encodeFragment({ events, tz }) {
   if (!events || events.length === 0) return '';
-  const json = JSON.stringify(events.map(toWire));
+  const bytes = new TextEncoder().encode(JSON.stringify(events.map(toWire)));
   const p = new URLSearchParams();
-  p.set('v', LINK_VERSION);
+  p.set('v', canDeflate() ? LINK_VERSION : '1');
   p.set('tz', tz);
-  p.set('e', bytesToB64url(await deflateRaw(new TextEncoder().encode(json))));
+  p.set('e', bytesToB64url(canDeflate() ? await deflateRaw(bytes) : bytes));
   return p.toString();
 }
 
@@ -148,7 +166,7 @@ function fromWire(w) {
 
 /**
  * @returns {{status:'empty'} | {status:'ok', events:object[], tz:string}
- *   | {status:'error', code:'bad_version'|'bad_link', detail?:string}}
+ *   | {status:'error', code:'bad_version'|'bad_browser'|'bad_link', detail?:string}}
  */
 export async function decodeFragment(raw) {
   const fail = (detail) => ({ status: 'error', code: 'bad_link', detail });
@@ -171,6 +189,7 @@ export async function decodeFragment(raw) {
     return fail('e');
   }
   if (v !== '1') {
+    if (!canInflate()) return { status: 'error', code: 'bad_browser' };
     try {
       bytes = await inflateRaw(bytes, MAX_INFLATED_BYTES);
     } catch {

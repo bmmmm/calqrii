@@ -106,8 +106,8 @@ export const ABC_ICS = ics([...HEAD, ...A_VEVENT, ...B_VEVENT, ...C_VEVENT, 'END
 
 // Version-1 fragments (uncompressed JSON): still decoded, no longer produced. The decoder pins them.
 export const B_FRAGMENT = 'v=1&tz=Europe%2FBerlin&e=W3sidCI6IkjDvHR0ZW53b2NoZW5lbmRlIiwiZCI6IjIwMjYtMTAtMTciLCJEIjoiMjAyNi0xMC0xOCIsImEiOjEsImwiOiJCZXJnaMO8dHRlIGFtIEJydW5uc3RlaW4ifV0';
-// Version 2 (deflate-raw, Node 26 zlib, 2026-10-01): a fixed input for the decoder and the link-mode QR pin.
-// Another zlib may pack the same JSON differently; the tests pin the decoding of this string, not that the encoder reproduces it.
+// Version 2 (deflate-raw) for B, produced 2026-10-01 by one zlib build (system zlib 1.2.12; Chromium's zlib packs the same
+// JSON into 118 instead of 107 chars). A fixed input for the decoder and the link-mode QR pin — no test expects the encoder to reproduce it.
 export const B_FRAGMENT_V2 = 'v=2&tz=Europe%2FBerlin&e=i65WKlGyUvI4vKekJDWvPD85IzUvNS8lVUlHKQUobmRgZKZraKBraA4UcEEWsAAKJCpZGeoo5QCFnVKL0jPAZigk5io4FZXm5RWXpGbmKdXGAgA';
 export const D_FRAGMENT = 'v=1&tz=Europe%2FBerlin&e=W3sidCI6IlN0YWR0ZsO8aHJ1bmcgTWFyaWVucGxhdHoiLCJkIjoiMjAyNi0xMC0xMCIsInMiOiIxNDowMCIsImUiOiIxNjowMCIsImwiOiJNYXJpZW5wbGF0eiAxLCA4MDMzMSBNw7xuY2hlbiIsImciOiI0OC4xMzcxNTQsMTEuNTc2MTI0IiwidSI6Imh0dHBzOi8vZXgub3JnL2Z1ZWhydW5nIn1d';
 // The public copy's base; shipped code never hard-codes it (the page is self-hostable), fixtures may.

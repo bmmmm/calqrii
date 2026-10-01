@@ -56,7 +56,9 @@ The only way to keep your events is the share link, which carries them in the
 URL `#fragment` (browsers never send fragments in requests). It is still an
 ordinary URL: in your history, and in clear text wherever you paste it. Since
 2026-10-01 the fragment is compressed (`v=2`, deflate), which makes link QR
-codes one to four versions smaller; older `v=1` links keep opening.
+codes one to four versions smaller; older `v=1` links keep opening, and a
+browser without `CompressionStream` (Safari before 16.4) writes `v=1` links
+and says so when it meets a `v=2` one.
 
 A link QR code is such a share link. The page that generates it sends
 nothing; the phone that scans it requests this page from its host (for the
@@ -75,7 +77,9 @@ day). Timed single events are written in UTC (`…Z`), converted from the time
 zone your browser reports (a shared link carries the zone it was made in).
 Timed recurring events are written as floating
 local time (no `Z`), so a weekly 07:00 stays 07:00 across daylight-saving
-changes.
+changes. The `UID` is a hash of the event's content, so scanning the same
+code twice updates rather than duplicates; on 2026-10-01 `INTERVAL=1` left
+the `RRULE` line, which gave every recurring event a new UID once.
 
 ## Tested scanners
 
@@ -83,7 +87,7 @@ changes.
 is backed by Apple's Vision framework) over the page and decodes every
 rendered code back byte for byte — the fixtures plus an event with emoji,
 curly quotes and escaped characters, as calendar data and as links, single
-and combined (last run 2026-10-01: 12 codes, 180–1 600 bytes, all exact).
+and combined (last run 2026-10-01: 12 codes, 165–1 600 bytes, all exact).
 What a phone's camera app does with the calendar payload is a device
 question and is recorded here as it gets tested:
 
@@ -93,7 +97,7 @@ question and is recorded here as it gets tested:
 
 ## Development
 
-Node ≥ 20, no dependencies.
+Node ≥ 22, no dependencies.
 
 ```sh
 npm test                                        # unit tests + web smoke gate

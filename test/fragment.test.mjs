@@ -49,6 +49,21 @@ deq(back.events.map(strip), events.map(strip), 'round trip deep-equal without id
   ok(big.length < new URLSearchParams(link([A, C, emoji].map((ev) => JSON.parse(JSON.stringify(ev))))).toString().length, 'compression pays off on text-heavy events');
 }
 eq(await encodeFragment({ events: [], tz: TZ }), '', 'empty → empty string');
+{
+  // without the platform streams (older browsers): write v1, answer v2 with bad_browser, never throw
+  const [C, D2] = [globalThis.CompressionStream, globalThis.DecompressionStream];
+  globalThis.CompressionStream = undefined;
+  globalThis.DecompressionStream = undefined;
+  try {
+    const legacy = await encodeFragment({ events: [B], tz: TZ });
+    eq(legacy, B_FRAGMENT, 'without CompressionStream the encoder writes the v1 fragment');
+    deq(strip((await decodeFragment(legacy)).events[0]), strip(B), 'and v1 still decodes without the streams');
+    eq((await decodeFragment(B_FRAGMENT_V2)).code, 'bad_browser', 'a v2 link without DecompressionStream → bad_browser');
+  } finally {
+    globalThis.CompressionStream = C;
+    globalThis.DecompressionStream = D2;
+  }
+}
 eq(LINK_VERSION, '2', 'link version');
 
 // links: one event per code; the fragment survives the URL parser unchanged
@@ -97,6 +112,14 @@ await bad(B_FRAGMENT_V2.replace('v=2', 'v=1'), 'v=1 with compressed payload', 'j
   const bomb = 'v=2&tz=UTC&e=' + bytesToB64url(deflateRawSync(Buffer.alloc(2 * MAX_INFLATED_BYTES, 0x20)));
   ok(bomb.length < 20000, `bomb is small on the wire (${bomb.length})`);
   await bad(bomb, 'inflates beyond MAX_INFLATED_BYTES', 'inflate');
+  // a bomb that fits under MAX_E_LENGTH but would inflate to 16× the cap: abandoned early, so it must be fast. Node's zlib stream
+  // yields output piecewise even for one input chunk; the slicing in inflateRaw matters in Chrome, where a chunk inflates whole
+  // (measured 2026-10-01 over CDP: see scripts/browser-gate; no unit test can see that difference).
+  const big = 'v=2&tz=UTC&e=' + bytesToB64url(deflateRawSync(Buffer.alloc(16 * MAX_INFLATED_BYTES, 0x20)));
+  ok(big.length < MAX_E_LENGTH, `64 MiB bomb fits the wire limit (${big.length})`);
+  const t0 = performance.now();
+  await bad(big, '64 MiB bomb', 'inflate');
+  ok(performance.now() - t0 < 500, `the bomb is abandoned early (${Math.round(performance.now() - t0)} ms)`);
   const under = 'v=2&tz=UTC&e=' + bytesToB64url(deflateRawSync('[' + ' '.repeat(MAX_INFLATED_BYTES - 40) + '{"t":"x","d":"2026-01-01","a":1}]'));
   eq((await decodeFragment(under)).status, 'ok', 'just under the cap still decodes');
   eq((await decodeFragment(link2([{ t: 'x', d: '2026-01-01', a: 1 }]))).status, 'ok', 'a hand-built v2 link decodes');
@@ -112,7 +135,7 @@ await bad('v=1&tz=UTC&e=_w', 'e=_w is 0xFF, not UTF-8');
   // valid JSON shape around one invalid UTF-8 byte: only a fatal decoder refuses it
   const enc = new TextEncoder();
   const raw = new Uint8Array([...enc.encode('[{"t":"'), 0xff, ...enc.encode('","d":"2026-01-01","a":1}]')]);
-  bad('v=1&tz=UTC&e=' + bytesToB64url(raw), 'invalid UTF-8 inside a JSON string');
+  await bad('v=1&tz=UTC&e=' + bytesToB64url(raw), 'invalid UTF-8 inside a JSON string');
 }
 await bad('v=1&tz=UTC&e=', 'empty e');
 await bad(link({ t: 'x', d: '2026-01-01' }), 'object instead of array');
