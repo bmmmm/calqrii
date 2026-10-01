@@ -67,6 +67,7 @@ function parseNow() {
   state.truncated = truncated;
   state.selected = new Set(items.filter((it) => it.errors.length === 0 && !it.past).map((it) => it.ev.id));
   state.showPast = false;
+  openCodes.clear(); // ids are positions in this parse: an open card of the previous list says nothing about this one
   render();
 }
 
@@ -156,7 +157,9 @@ function renderList() {
     showText(node.querySelector('.imp-err'), it.errors.length ? `${t().imp_invalid} ${it.errors.map(errorText).join(' ')}` : '');
     const codes = node.querySelector('.imp-codes');
     codes.hidden = it.errors.length > 0;
-    codes.querySelector('summary').textContent = t().imp_codes;
+    const summary = codes.querySelector('summary');
+    summary.textContent = t().imp_codes;
+    summary.setAttribute('aria-label', `${t().imp_codes}: ${ev.title || t().imp_untitled}`);
     codes.addEventListener('toggle', () => {
       if (!codes.open) { openCodes.delete(ev.id); return; }
       openCodes.add(ev.id);
@@ -230,13 +233,12 @@ function codeNode({ text, label, external }) {
   const a = node.querySelector('.imp-code-link');
   a.href = text;
   a.textContent = label;
-  if (external) a.rel = 'noopener noreferrer';
+  if (external) { a.target = '_blank'; a.rel = 'noopener noreferrer'; } // the source's page must not replace the pick list
   const qrEl = node.querySelector('.qr');
   let svg = null;
   try { svg = svgNode(qrSvg(text).svg); } catch { /* over the QR capacity: the link alone */ }
   if (svg) {
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', label);
+    svg.setAttribute('aria-hidden', 'true'); // the link below names the same target; a reader would hear it twice
     qrEl.replaceChildren(svg);
   } else qrEl.hidden = true;
   return node;
@@ -309,7 +311,7 @@ function init() {
   els.open.addEventListener('click', (e) => { if (!state.link) e.preventDefault(); });
   // Printing: every fold prints open, and closes again afterwards.
   let unfolded = [];
-  window.addEventListener('beforeprint', () => { unfolded = [...document.querySelectorAll('details:not([open])')]; for (const d of unfolded) d.open = true; });
+  window.addEventListener('beforeprint', () => { unfolded = [...document.querySelectorAll('details:not([open]):not(.imp-codes)')]; for (const d of unfolded) d.open = true; });
   window.addEventListener('afterprint', () => { for (const d of unfolded) d.open = false; unfolded = []; });
   applyLang((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en');
 }

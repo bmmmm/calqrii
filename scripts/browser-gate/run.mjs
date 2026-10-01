@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openTarget } from './cdp.mjs';
-import { encodeFragment } from '../../fragment.js';
+import { encodeFragment, decodeFragment } from '../../fragment.js';
 import { newEvent } from '../../model.js';
 import { A, B, C, D } from '../../test/helpers/fixtures.mjs';
 
@@ -216,23 +216,40 @@ try {
     log('import page not booted, retry', attempt, '--', failedSince(bootMark));
   }
   const paste = (text) => t.evaluate(`(() => { const ta = document.querySelector('#imp-text'); ta.value = ${JSON.stringify(text)}; ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  // Per-event codes: a calendar event that names its page gets two (its calqrii link, its page), both decoded.
+  // Per-event codes: a calendar event that names its page gets two (its calqrii link, its page), both decoded;
+  // a second event in the file proves the link holds this card's event, not the selection.
   await t.evaluate(probeSrc);
   const EVENT_URL = 'https://example.org/termine/grillfest?id=7&lang=de';
-  await paste(['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20301005T170000Z', 'DTEND:20301005T190000Z', 'SUMMARY:Grillfest', `URL:${EVENT_URL}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
-  await waitFor(`document.querySelectorAll('#imp-list > li').length === 1`);
+  await paste(['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20301005T170000Z', 'DTEND:20301005T190000Z', 'SUMMARY:Grillfest', `URL:${EVENT_URL}`, 'END:VEVENT',
+    'BEGIN:VEVENT', 'DTSTART:20301006T170000Z', 'DTEND:20301006T190000Z', 'SUMMARY:Flohmarkt', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+  await waitFor(`document.querySelectorAll('#imp-list > li').length === 2`);
   await t.evaluate(`(document.querySelector('.imp-codes').open = true, true)`);
   if (!await waitFor(`document.querySelectorAll('.imp-code .qr svg').length === 2`)) fail(`import codes: ${await t.evaluate(`document.querySelectorAll('.imp-code').length`)} codes rendered, 2 expected`);
   else {
     const codes = await t.evaluate('__probe.probeImportCodes()');
     const bad = codes.filter((c) => !c.roundTrip.ok);
-    if (codes.length !== 2 || bad.length || !codes[0].text.startsWith(BASE + '#') || codes[1].text !== EVENT_URL) fail(`import codes: ${JSON.stringify(codes)}`);
-    else ok('import: an event opens two codes, its calqrii link and its page, both decoded byte for byte');
+    const own = codes.length ? await decodeFragment(codes[0].text.slice(codes[0].text.indexOf('#') + 1)) : null;
+    const ownTitles = own && own.status === 'ok' ? own.events.map((e) => e.title) : null;
+    if (codes.length !== 2 || bad.length || !codes[0].text.startsWith(BASE + '#') || codes[1].text !== EVENT_URL || JSON.stringify(ownTitles) !== '["Grillfest"]') fail(`import codes: ${JSON.stringify(codes)}, link events ${JSON.stringify(ownTitles)}`);
+    else ok('import: an event opens two codes, its own calqrii link (that event only) and its page, both decoded byte for byte');
     await t.evaluate(`(document.querySelector('#imp-none').click(), true)`); // re-renders every card
-    if (!await waitFor(`document.querySelector('.imp-codes').open && document.querySelectorAll('.imp-code .qr svg').length === 2`)) fail('import codes: an open card closed on re-render');
+    if (!await waitFor(`document.querySelector('.imp-codes').open && !document.querySelectorAll('.imp-codes')[1].open && document.querySelectorAll('.imp-code .qr svg').length === 2`)) fail('import codes: an open card closed on re-render');
     else ok('import: open codes stay open when the list re-renders');
+    const attrs = await t.evaluate(`(() => {
+      const links = document.querySelectorAll('.imp-code-link');
+      dispatchEvent(new Event('beforeprint'));
+      const printOpen = document.querySelectorAll('.imp-codes')[1].open;
+      dispatchEvent(new Event('afterprint'));
+      return { label: document.querySelector('.imp-codes > summary').getAttribute('aria-label'),
+        hidden: [...document.querySelectorAll('.imp-code svg')].map((e) => e.getAttribute('aria-hidden')),
+        own: links[0].target, page: links[1].target, rel: links[1].rel, printOpen };
+    })()`);
+    if (!/Grillfest$/.test(attrs.label) || attrs.hidden.join() !== 'true,true' || attrs.own !== '' || attrs.page !== '_blank' || attrs.rel !== 'noopener noreferrer' || attrs.printOpen) fail(`import codes attributes: ${JSON.stringify(attrs)}`);
+    else ok('import: codes are named per event, hidden from readers behind their links, the source page opens apart, print leaves them shut');
   }
   await paste(IMPORT_TEXT);
+  if (!await waitFor(`document.querySelectorAll('#imp-list > li').length === ${IMPORT_TITLES.length}`) || await t.evaluate(`document.querySelectorAll('.imp-codes[open]').length`) !== 0) fail('import codes: a new list opened codes of the previous one');
+  else ok('import: a new list starts with every card\'s codes shut');
   if (!await waitFor(`document.querySelectorAll('#imp-list > li').length === ${IMPORT_TITLES.length} && (document.querySelector('#imp-open').getAttribute('href') || '').startsWith(${JSON.stringify(BASE + '#')})`)) {
     fail(`import: ${await t.evaluate(`document.querySelectorAll('#imp-list > li').length`)} cards, link ${await t.evaluate(`document.querySelector('#imp-open').getAttribute('href')`)}`);
   } else {

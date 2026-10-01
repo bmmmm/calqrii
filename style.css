@@ -392,8 +392,7 @@ pre.qr-text.link { white-space: pre-wrap; overflow-wrap: anywhere; }
 .imp-desc { white-space: pre-line; }
 .imp-warn { color: var(--warn); font-size: 0.85rem; }
 .imp-err { color: var(--err); font-size: 0.85rem; }
-.imp-codes { margin: 4px 0 0 12px; }
-.imp-codes > summary { font-size: 0.9rem; min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.imp-codes { margin-left: 12px; }
 .imp-code-list { display: flex; flex-wrap: wrap; gap: 16px; }
 .imp-code { margin: 0; width: min(100%, 16rem); }
 .imp-code figcaption { margin-top: 4px; font-size: 0.9rem; overflow-wrap: anywhere; }

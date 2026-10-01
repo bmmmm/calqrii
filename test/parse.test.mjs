@@ -288,6 +288,30 @@ eq(parseDuration('-PT1H'), null, 'negative unsupported');
   eq(l('26.10.2026 09:00 Treffen – 30.10.2026 16:00').endDate, '2026-10-26', 'words after the start time: no span');
   eq(l('26.10.2026 (09:00) – 30.10.2026 Camp').endDate, '2026-10-26', 'no time after the end date: no span');
   eq(l('26.10.2026 (09:00) – 30.10.2026 Camp 16:00').endDate, '2026-10-26', 'words before the end time: no span');
+  deq([l('20.11. 18:00 Stammtisch').date, l('20.11. 18:00 Stammtisch').startTime], ['2026-11-20', '18:00'], 'the hour after a date without a year is no two-digit year');
+  deq([l('20.11. 18.30 Uhr Stammtisch').date, l('20.11. 14 Uhr Stammtisch').date], ['2026-11-20', '2026-11-20'], 'nor a dotted time or a bare hour with "Uhr"');
+  eq(l('05.11.26 Treffen').date, '2026-11-05', 'a two-digit year still reads');
+  deq([l('05.10.26 18:00 Treffen').date, l('05.10.26 18:00 Treffen').startTime, l('5.10.26, 18 Uhr Treffen').startTime], ['2026-10-05', '18:00', '18:00'], 'a two-digit year followed by a time');
+  eq(l('20.11. 18-20 Uhr Stammtisch').date, '2026-11-20', 'an hour range after a space is no two-digit year');
+  for (const [line, time] of [['20.11.18:00 Stammtisch', '18:00'], ['20.11.18 Uhr Stammtisch', '18:00'], ['20.11.18.30 Uhr Stammtisch', '18:30']]) {
+    deq([l(line)?.date, l(line)?.startTime], ['2026-11-20', time], `a time right at the date's dot: ${line}`);
+  }
+  for (const line of ['Version 1.2.345 freigegeben', 'Version 2.3.4.5 im Club', 'Server 10.1.1.1 neu', 'Version 1.2.3:45', 'Version 1.2.10.11.5', 'Version 1.2.10.11.5 ab 18 Uhr', 'Build 1.2.3.12.2026', 'Ergebnis 3.4.1:0 Sieg', 'Kapitel 12.3.4 Uhr']) {
+    eq(l(line), null, `digits right after "D.M." that are no two-digit hour end the match: ${line}`);
+  }
+  deq([l('17.10.18 - 20 Uhr Fest').date, l('17.10.18 bis 20 Uhr Fest').date], ['2026-10-17', '2026-10-17'], 'an hour range right at the dot is no year either');
+  deq([l('Sa 05.10.27 - 19 Uhr Konzert').date, l('05.10.27 bis 20 Uhr Flohmarkt').date, l('05.10.27 bis 20 Uhr Flohmarkt').title], ['2027-10-05', '2027-10-05', 'Flohmarkt'], 'a number that is no hour (24–99) before an hour range stays the year');
+  deq([l('14.10.19.30 Chor').date, l('14.10.19.30 Chor').title], ['2026-10-14', '19.30 Chor'], 'a date glued to a dotted time stays a visible event (the dotted time needs "Uhr")');
+  eq(l('Server 10.1.10.11 neu').date, '2027-01-10', 'an address of that shape reads alike: visible, deselectable');
+  deq([l('20. 11. 26 Fest').date, l('20. 11. 26 Fest').title, l('20.11. 26 18:00 Fest').date], ['2026-11-20', 'Fest', '2026-11-20'], 'a two-digit year after a space still reads');
+  for (const [line, from, to] of [['30.12.–2.1. Ferien', '2026-12-30', '2027-01-02'], ['31.12.2026 – 01.01. Silvester', '2026-12-31', '2027-01-01'], ['Dec 30 – Jan 2 Trip', '2026-12-30', '2027-01-02']]) {
+    deq([l(line).date, l(line).endDate], [from, to], `an end without a year before the start is next year: ${line}`);
+  }
+  for (const line of ['15.10.2026 – 10.10. Tippfehler', '18.10. – 17.10. Rückwärts', '15.10.2026 – 10.01. Start vor November', '15.12.2026 – 10.10. Ende nach Februar', '31.12.2026 – 01.01.2026 Jahr genannt']) {
+    deq(parseInput(line, { tz: TZ, today: TODAY }).items[0].errors, ['err_end_before_start'], `a reversed span that crosses no New Year is refused, not stretched over a year: ${line}`);
+  }
+  eq(l('Konferenz 26.10.2026 (09:00) – 30.10.2026 (16:00)').title, 'Konferenz', 'the parenthesis after the end time is not part of a leading title');
+  deq([l('28.12. 18:00 – 02.01.2027 10:00 Ferien').date, l('28.12. 18:00 – 02.01.2027 10:00 Ferien').endDate], ['2026-12-28', '2027-01-02'], 'a span over New Year without the start year still reads');
   eq(l('26.10.2026 18.30 – 30.10.2026 16.00 Uhr Camp').endTime, '16:00', 'dotted times count when the line says "Uhr" anywhere');
   const t0 = performance.now();
   const long = parseText('05.10.2026 Lang ' + ' -'.repeat(30000) + ' Ende', { today: TODAY });
@@ -332,6 +356,7 @@ const before = ['Grillfest', '05.10.2026 19:00', 'Hüttenwochenende', '17.10.202
   deq(titles(['Termine', '01.11.2026 10:00', 'A', 'da', '02.11.2026 10:00', 'B', 'db', '03.11.2026 10:00', 'C', 'dc', 'dc2', '04.11.2026 10:00', 'D', 'dd']), ['A', 'B', 'C', 'D'], 'the most frequent gap decides, not the last one');
   deq(titles(['Termine', '01.11.2026 10:00', 'A', 'da', 'db', '02.11.2026 10:00', 'B', 'da', 'db', '03.11.2026 10:00', 'C']), ['A', 'B', 'C'], 'a start longer than the lines above the first date line is no title-before list');
   deq(titles(['Grillfest', '05.10.2026 19:00', 'Im Garten']), ['Grillfest'], 'a single date line: the line above titles it');
+  deq(titles(['X', '01.11.2026 10:00 A', 'Y', '02.11.2026 10:00 B']), ['A', 'B'], 'date lines with their own titles never take the line above');
   deq(parseText(['Termine', ...before.split('\n')].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['Grillfest', 'Hüttenwochenende', 'Vorstandssitzung'], 'a heading above a title-before list keeps the before reading');
 }
 deq(parseText('Nur Text ohne ein Datum.\nNoch eine Zeile.', { today: TODAY }), [], 'no date, no events');
@@ -347,6 +372,9 @@ deq(parseText('Nur Text ohne ein Datum.\nNoch eine Zeile.', { today: TODAY }), [
   deq(items.map((i) => i.ev.id), [1, 2, 3], 'sequential ids');
   deq(items.map((i) => i.past), [true, false, false], 'past flag');
   deq(items[2].errors, ['err_title_required'], 'a date without any title is an error, not an event');
+  for (const line of ['12.10.2026 um 18 Uhr bis 11.10.2026 um 9 Uhr Treffen', '12.10.2026 um 9 Uhr bis 11.10.2026 um 18 Uhr Treffen', '12.10.2026 bis 11.10.2026 Treffen']) {
+    deq(parseInput(line, { tz: TZ, today: TODAY }).items[0].errors, ['err_end_before_start'], `a span ending before it starts is refused, not shortened: ${line}`);
+  }
   eq(parseInput('', { tz: TZ, today: TODAY }).kind, 'empty', 'empty input');
   const ics = parseInput(serializeCalendar([C], OPTS), { tz: TZ, today: '2027-01-01' });
   eq(ics.kind, 'ics', 'ics detected');

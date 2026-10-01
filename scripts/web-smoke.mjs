@@ -253,6 +253,7 @@ function bodyOf(src, fn) {
   const importGated = [
     ['pageBase', ['location.origin + location.pathname'], [literalOrigin]],
     ['renderBar', ['linkFor(pageBase(), chosen, state.tz)', 'state.selected'], [formRead, literalOrigin]],
+    ['renderCodes', ['linkFor(pageBase(), [ev], state.tz)', 'ev.url'], [formRead, literalOrigin]],
   ];
   for (const [file, list] of [['app.js', gated], ['import.js', importGated]]) {
     const code = read(file);
