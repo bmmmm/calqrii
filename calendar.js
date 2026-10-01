@@ -8,7 +8,8 @@ function pad(n) {
 }
 
 function iso(d) {
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  // Four-digit year: typing a year into a date field passes through 0202, which must stay a readable ISO date.
+  return `${String(d.getUTCFullYear()).padStart(4, '0')}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
 /** 6 rows × 7 cells of { date, inMonth }; month is 1-based, weekStart 1 = Monday. */

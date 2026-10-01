@@ -25,4 +25,9 @@ for (let m = 1; m <= 12; m++) {
 eq(monthGrid(2028, 2).flat().filter((c) => c.inMonth).length, 29, 'Feb 2028 has 29 in-month cells');
 eq(monthGrid(2026, 10, 0)[0][0].date, '2026-09-27', 'weekStart 0 = Sunday');
 
+{
+  const g = monthGrid(202, 10);
+  ok(g.flat().every((c) => /^0\d{3}-\d{2}-\d{2}$/.test(c.date)), 'a year below 1000 keeps four digits (typing a year passes through 0202)');
+}
+
 console.log(`calendar.test: ${checks} checks passed`);

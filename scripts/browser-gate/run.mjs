@@ -224,6 +224,98 @@ try {
   if (JSON.stringify(days) !== JSON.stringify(want)) fail(`all-day duration: ${JSON.stringify(days)}`);
   else ok('all day: the duration counts days ("3 days" sets the end date, a typed end date is read back); a day picked in the grid takes the preset, a second pick adds to the selection instead of a rewritten one, "each" hides the day count, Clear clears');
 
+  // Calendar defaults: moving the start keeps the event's length; unticking All day falls back to one day of 1 h;
+  // a typed span reports the days it covers.
+  phase = 'defaults';
+  const defs = await t.evaluate(`(async () => {
+    const q = (s) => document.querySelector(s); const tick = () => new Promise((r) => setTimeout(r, 50));
+    // A headless window has no focus, so focus() fires no event: dispatch it, as a tap into the field would.
+    const set = (s, v, ev = 'change') => { const e = q(s); e.dispatchEvent(new FocusEvent('focus')); e.value = v; e.dispatchEvent(new Event(ev, { bubbles: true })); };
+    q('#clear-sel').click(); await tick();
+    if (q('#f-allday').checked) { q('#f-allday').click(); await tick(); }
+    set('#f-date', '2030-10-10'); await tick();
+    set('#f-start', '09:00', 'input'); await tick();
+    set('#f-duration', 'custom'); await tick();
+    set('#f-end-date', '2030-10-12'); await tick();
+    set('#f-end', '10:00', 'input'); await tick();
+    set('#f-date', '2030-10-15'); await tick();
+    const timed = [q('#f-end-date').value, q('#f-end').value];
+    q('#f-allday').click(); await tick();
+    set('#f-date', '2030-10-10'); await tick();
+    set('#f-end-date', '2030-10-18'); await tick();
+    set('#f-date', '2030-10-12'); await tick();
+    const allDay = [q('#f-end-date').value, q('#f-day-duration').value];
+    set('#f-date', '2030-10-20'); await tick();
+    set('#f-end-date', '2030-11-02'); await tick();
+    const label = /^14 /.test(q('#sel-info').textContent) ? 14 : q('#sel-info').textContent;
+    q('#f-allday').click(); await tick();
+    const picked = () => [...document.querySelectorAll('#calendar [aria-pressed="true"]')].map((b) => b.dataset.date);
+    const untick = [q('#f-end-date').value, q('#f-duration').value, picked().join()];
+    set('#f-start', '09:00', 'input'); await tick();
+    untick.push(q('#f-end').value);
+    // The grid sets the dates without the field's focus: the next typed start still moves from the grid's date.
+    q('#clear-sel').click(); await tick();
+    q('[data-date="2030-10-05"]').click(); await tick();
+    q('[data-date="2030-10-06"]').click(); await tick();
+    q('input[name="days-mode"][value="span"]').click(); await tick();
+    set('#f-date', '2030-10-08'); await tick();
+    const afterGrid = [q('#f-end-date').value];
+    // A second change without a new focus (arrow keys in the field) moves on from the first.
+    const d = q('#f-date'); d.value = '2030-10-10'; d.dispatchEvent(new Event('change', { bubbles: true })); await tick();
+    afterGrid.push(q('#f-end-date').value);
+    // Ticking again reads the one day unticking left; a blank start leaves the selection as it is.
+    q('#clear-sel').click(); await tick();
+    set('#f-date', '2030-10-10'); await tick();
+    set('#f-end-date', '2030-10-14'); await tick();
+    q('#f-allday').click(); await tick();
+    const ticked = q('#f-day-duration').value;
+    q('#f-allday').click(); await tick();
+    q('#f-allday').click(); await tick();
+    const retick = [ticked, q('#f-end-date').value];
+    q('#f-allday').click(); await tick();
+    set('#f-date', '2030-10-11'); await tick();
+    q('#f-allday').click(); await tick();
+    retick.push(q('#f-end-date').value);
+    q('#clear-sel').click(); await tick();
+    q('[data-date="2030-10-05"]').click(); await tick();
+    q('[data-date="2030-10-06"]').click(); await tick();
+    q('input[name="days-mode"][value="span"]').click(); await tick();
+    set('#f-date', ''); await tick();
+    q('#f-allday').click(); await tick();
+    retick.push(picked().join());
+    return { timed, allDay, label, untick, afterGrid, retick };
+  })()`);
+  const wantDefs = { timed: ['2030-10-17', '10:00'], allDay: ['2030-10-20', 'custom'], label: 14, untick: ['2030-10-20', '60', '2030-10-20', '10:00'], afterGrid: ['2030-10-09', '2030-10-11'], retick: ['5', '2030-10-10', '2030-10-11', '2030-10-05,2030-10-06'] };
+  if (JSON.stringify(defs) !== JSON.stringify(wantDefs)) fail(`calendar defaults: ${JSON.stringify(defs)}`);
+  else ok('defaults: moving the start keeps the length (timed and all day, preset or not), unticking All day gives one day of 1 h, a typed span counts its days');
+
+  // Real keys: typing a year into From reports every stage (0002, 0020, 0202, 2029) as a change; the event must
+  // keep its length across them and land on the final year (a synthetic .value write never shows the stages).
+  await t.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await t.evaluate(`(async () => {
+    const q = (s) => document.querySelector(s); const tick = () => new Promise((r) => setTimeout(r, 50));
+    const set = (s, v, ev = 'change') => { const e = q(s); e.dispatchEvent(new FocusEvent('focus')); e.value = v; e.dispatchEvent(new Event(ev, { bubbles: true })); };
+    q('#clear-sel').click(); await tick();
+    set('#f-date', '2030-10-10'); await tick();
+    set('#f-start', '09:00', 'input'); await tick();
+    set('#f-duration', 'custom'); await tick();
+    set('#f-end-date', '2030-10-12'); await tick();
+    set('#f-end', '10:00', 'input'); await tick();
+    q('#f-date').focus();
+    return true;
+  })()`);
+  const key = async (k, code, vk, text) => {
+    await t.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk, ...(text ? { text } : {}) });
+    await t.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+  };
+  await key('ArrowRight', 'ArrowRight', 39); await key('ArrowRight', 'ArrowRight', 39); // to the year segment (last in every locale)
+  for (const ch of '2029') await key(ch, 'Digit' + ch, 48 + Number(ch), ch);
+  await new Promise((r) => setTimeout(r, 200));
+  const typed = await t.evaluate(`[document.querySelector('#f-date').value, document.querySelector('#f-end-date').value]`);
+  await t.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  if (JSON.stringify(typed) !== JSON.stringify(['2029-10-10', '2029-10-12'])) fail(`typing a year into From: ${JSON.stringify(typed)}`);
+  else ok('defaults: typing a year key by key moves the event to that year with its length (no jump across the stages)');
+
   await loadView(true);
   phase = 'editor';
   await t.evaluate(`document.querySelector('#view-edit').click(), true`);

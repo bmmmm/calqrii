@@ -487,6 +487,17 @@ function syncDurationSelect() {
   else els.duration.value = durationOption(readEditor(), els.duration.value);
 }
 
+/** Ticked: the day count reads the dates. Unticked: back to the default, one day of DEFAULT_DURATION from a start time. */
+function onAllDayChange() {
+  const date = els.date.value;
+  if (els.allDay.checked) { syncDurationSelect(); render(); return; }
+  els.duration.value = String(DEFAULT_DURATION);
+  if (!isValidDate(date)) { render(); return; }
+  els.endDate.value = date;
+  if (state.selected.size > 1 && !eachMode()) state.selected = new Set([date]);
+  render();
+}
+
 function onDayDurationChange() {
   if (els.dayDuration.value === 'custom') { els.endDate.focus(); return; }
   const sel = state.selected;
@@ -506,7 +517,18 @@ function onDurationChange() {
   else followStart();
 }
 
+let startBefore = ''; // the From date when its field took focus: moving it moves the end by as many days
+const daysFrom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
 function onFromDateChange() {
+  // Typing a year reports every stage (0002, 0020, 0202, 2029): an invalid one changes nothing, a valid one moves on.
+  if (!isValidDate(els.date.value)) return;
+  const from = startBefore;
+  startBefore = els.date.value; // the next change (arrow keys, the next digit) moves from here
+  // As in a calendar the event keeps its length: the end date follows, a preset then recomputes it anyway.
+  if (isValidDate(from) && isValidDate(els.endDate.value)) {
+    els.endDate.value = addDays(els.endDate.value, daysFrom(from, els.date.value));
+  }
   syncSelectionFromDates();
   if (!applyDuration()) syncDurationSelect();
   render();
@@ -680,7 +702,10 @@ function renderCalendar() {
 
 function renderSelection() {
   const n = state.selected.size;
-  els.selInfo.textContent = n === 0 ? t().sel_none : t().sel_count(n);
+  // One event from the first to the last day counts the days it spans, not the two ends picked.
+  const days = selectedDays();
+  const count = n >= 2 && state.mode === 'span' ? daysFrom(days[0], days[n - 1]) + 1 : n;
+  els.selInfo.textContent = n === 0 ? t().sel_none : t().sel_count(count);
   els.clearSel.hidden = n === 0;
 }
 
@@ -1249,8 +1274,7 @@ async function main() {
   els.form.addEventListener('input', (e) => refreshDraftFeedback(fieldOf(e.target)));
   els.form.addEventListener('change', (e) => { const f = fieldOf(e.target); if (f) state.touched.add(f); refreshDraftFeedback(); });
   els.cancelEdit.addEventListener('click', cancelEdit);
-  // Unticking "All day" leaves blank times: the select keeps its preset, or shows "other" across days.
-  els.allDay.addEventListener('change', () => { syncDurationSelect(); renderEditorState(); });
+  els.allDay.addEventListener('change', onAllDayChange);
   els.freq.addEventListener('change', onFreqChange);
   els.cfreq.addEventListener('change', () => { ensureStartWeekday(); renderEditorState(); });
   // Interval, weekday chips, "Ends" radios, count and until all feed the summary line.
@@ -1267,6 +1291,7 @@ async function main() {
   els.end.addEventListener('input', syncDurationSelect);
   els.duration.addEventListener('change', onDurationChange);
   els.dayDuration.addEventListener('change', onDayDurationChange);
+  els.date.addEventListener('focus', () => { startBefore = els.date.value; });
   els.date.addEventListener('change', onFromDateChange);
   els.endDate.addEventListener('change', onToDateChange);
   els.location.addEventListener('input', () => { syncOsmSearch(); clearGeoResults(); });
