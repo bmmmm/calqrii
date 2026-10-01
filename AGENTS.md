@@ -39,6 +39,11 @@ and the test script.
   the option lists in `index.html` against the model's constants.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
   shipped files; `.github/workflows/pages.yml` runs tests + smoke, then deploys.
+- `scripts/browser-gate/` — `npm run gate:browser`: headless Chrome over the
+  DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes
+  every rendered code with `BarcodeDetector` and compares it byte for byte;
+  `--sweep` adds the scale/blur and ECC report. Needs Chrome outside a
+  sandbox and Node ≥ 22; not part of `npm test` or CI.
 
 Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
 geocode.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
@@ -85,8 +90,8 @@ static and relative (`./x.js`).
 1. `npm test` green (run it — don't assume).
 2. Every new or changed check has been shown able to fail: one mutation per
    check, counted from the source, then reverted.
-3. Browser run green: `BarcodeDetector` decode of every rendered QR, no CSP
-   violations, no network beyond the shipped files. No script for it lives
-   in the repo yet; the initial build drove headless Chrome over the DevTools
-   protocol (see README "Tested scanners").
+3. `npm run gate:browser` green: `BarcodeDetector` decode of every rendered
+   QR (both payload modes, combined code), no console error or CSP violation,
+   no request beyond the dev server. Run it after any change to the codes,
+   the serializers, the fragment codec or the render paths.
 4. README "Tested scanners" table maintained when a device test happened.

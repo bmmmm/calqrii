@@ -77,10 +77,12 @@ changes.
 
 ## Tested scanners
 
-During the initial build (2026-09-27) a one-off headless-Chrome run (Chrome
-153, macOS) decoded 16 rendered codes, including a 2 342-byte combined one,
-back byte for byte with `BarcodeDetector`. That run is not part of the test
-suite. What a phone's camera app does with the calendar payload is a device
+`npm run gate:browser` drives headless Chrome (macOS, where `BarcodeDetector`
+is backed by Apple's Vision framework) over the page and decodes every
+rendered code back byte for byte — the fixtures plus an event with emoji,
+curly quotes and escaped characters, as calendar data and as links, single
+and combined (last run 2026-10-01: 12 codes, 180–1 600 bytes, all exact).
+What a phone's camera app does with the calendar payload is a device
 question and is recorded here as it gets tested:
 
 | Device / OS | Scanner | Single event | All-day | Series (RRULE) | Combined QR | Link QR → view | View: Add to calendar | Result |
@@ -93,6 +95,7 @@ Node ≥ 20, no dependencies.
 
 ```sh
 npm test                                        # unit tests + web smoke gate
+npm run gate:browser                            # headless Chrome: decode every rendered code (needs Chrome, Node ≥ 22)
 python3 -m http.server 8765 --bind 127.0.0.1    # then open http://127.0.0.1:8765/
 ```
 

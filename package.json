@@ -5,6 +5,7 @@
   "description": "Calendar events as offline QR codes, generated in the browser",
   "license": "GPL-3.0-or-later",
   "scripts": {
-    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done && node scripts/web-smoke.mjs"
+    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done && node scripts/web-smoke.mjs",
+    "gate:browser": "node scripts/browser-gate/run.mjs"
   }
 }

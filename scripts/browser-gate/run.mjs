@@ -1,0 +1,181 @@
+// Browser gate (Definition of done, item 3): the shipped page in headless
+// Chrome, every rendered QR code decoded with BarcodeDetector and compared
+// byte for byte with the text it claims to carry, in both payload modes and
+// for the combined code; no request beyond the dev server, no console error
+// or warning (CSP violations surface there), no uncaught exception.
+//
+// Not part of `npm test`: it needs Chrome on this machine (and outside a
+// command sandbox) and Node ≥ 22 for the built-in WebSocket.
+//
+// Usage: node scripts/browser-gate/run.mjs [--sweep] [--out=<file.json>] [--keep]
+//   --sweep  also records the scale/blur sweep and the ECC alternatives per
+//            code (a report, not a gate; takes a few minutes)
+//   --out    writes the raw results as JSON
+//   --keep   leaves the dev server and Chrome running (debugging)
+//   CHROME=<path> overrides the browser binary.
+// Exit 1 on any failed check; the summary lists every code and its verdict.
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openTarget } from './cdp.mjs';
+import { encodeFragment } from '../../fragment.js';
+import { newEvent } from '../../model.js';
+import { A, B, C, D } from '../../test/helpers/fixtures.mjs';
+
+const here = new URL('.', import.meta.url);
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const SWEEP = process.argv.includes('--sweep');
+const KEEP = process.argv.includes('--keep');
+const OUT = (process.argv.find((a) => a.startsWith('--out=')) || '').slice(6);
+const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const TZ = 'Europe/Berlin';
+// The fixtures plus one event with 4-byte UTF-8, curly quotes, an en dash, ß and
+// the escaped characters ; and newline — the charset and escaping probe.
+const E = newEvent({
+  title: 'Party 🎉 „Zitat“ – Café', date: '2026-11-05', startTime: '19:00', endTime: '23:00',
+  location: 'Straße 1; Hof', description: 'Erste Zeile\nZweite Zeile, mit Komma',
+});
+const EVENTS = [A, B, C, D, E];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (...a) => console.error(new Date().toISOString().slice(11, 19), ...a);
+
+async function freePort() {
+  return new Promise((ok, bad) => {
+    const s = createServer();
+    s.on('error', bad);
+    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(port)); });
+  });
+}
+
+async function waitHttp(url, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try { const r = await fetch(url); if (r.ok) return; } catch {}
+    await sleep(100);
+  }
+  throw new Error(`not reachable within ${ms} ms: ${url}`);
+}
+
+const children = [];
+function start(cmd, args, label) {
+  const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  p.stderr.on('data', () => {});
+  p.on('error', (e) => { log(label, 'failed to start:', e.message); });
+  children.push(p);
+  return p;
+}
+let profile = null;
+async function cleanup() {
+  if (KEEP) return;
+  for (const p of children) { try { p.kill(); } catch {} }
+  if (profile) await rm(profile, { recursive: true, force: true }).catch(() => {});
+}
+process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
+
+const failures = [];
+const fail = (msg) => { failures.push(msg); console.log('FAIL', msg); };
+const ok = (msg) => console.log('ok  ', msg);
+
+try {
+  const httpPort = await freePort();
+  const cdpPort = await freePort();
+  const BASE = `http://127.0.0.1:${httpPort}/`;
+  start('python3', ['-m', 'http.server', String(httpPort), '--bind', '127.0.0.1', '--directory', ROOT], 'http.server');
+  await waitHttp(BASE + 'index.html', 5000);
+  profile = await mkdtemp(join(tmpdir(), 'calqrii-gate-'));
+  start(CHROME, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, '--no-first-run', '--disable-background-networking', 'about:blank'], 'chrome');
+  await waitHttp(`http://127.0.0.1:${cdpPort}/json/version`, 10000);
+
+  const fragment = await encodeFragment({ events: EVENTS, tz: TZ });
+  const probeSrc = await readFile(new URL('probe.js', here), 'utf8');
+  const t = await openTarget(cdpPort);
+  const requests = [];
+  const logEntries = [];
+  const exceptions = [];
+  let phase = 'load';
+  t.on('Network.requestWillBeSent', (p) => requests.push({ url: p.request.url, type: p.type, phase }));
+  t.on('Log.entryAdded', (p) => logEntries.push({ ...p.entry, phase }));
+  t.on('Runtime.exceptionThrown', (p) => exceptions.push({ text: p.exceptionDetails.exception?.description || p.exceptionDetails.text, phase }));
+  t.on('Runtime.consoleAPICalled', (p) => {
+    if (p.type === 'error' || p.type === 'warning') logEntries.push({ source: 'console', level: p.type, text: p.args.map((a) => a.value ?? a.description).join(' '), phase });
+  });
+  for (const d of ['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable']) await t.send(d);
+  await t.send('Network.setCacheDisabled', { cacheDisabled: true });
+  await t.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
+  async function waitFor(expr, ms = 3000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { if (await t.evaluate(expr).catch(() => false)) return true; await sleep(100); }
+    return false;
+  }
+  // The Python dev server now and then resets a module load; a reload cures it.
+  let attempt = 1;
+  for (; attempt <= 5; attempt++) {
+    if (attempt === 1) await t.send('Page.navigate', { url: BASE + '#' + fragment });
+    else await t.send('Page.reload', { ignoreCache: true });
+    await sleep(300);
+    if (await waitFor(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) break;
+    log('view not ready, retry', attempt);
+  }
+  if (attempt > 5) throw new Error('page never reached the view screen');
+  ok(`view shows ${EVENTS.length} events (load attempts: ${attempt})`);
+
+  phase = 'editor';
+  await t.evaluate(`document.querySelector('#view-edit').click(), true`);
+  if (!await waitFor(`document.querySelectorAll('[data-qr-panel] .qr svg').length >= ${EVENTS.length}`)) throw new Error('editor codes not rendered');
+  await t.evaluate(`(() => { const c = document.querySelector('#combined-toggle'); if (!c.checked) c.click(); return true; })()`);
+  if (!await waitFor(`!!document.querySelector('#combined-panel .qr svg')`)) throw new Error('combined code not rendered');
+  await t.evaluate(probeSrc);
+
+  const self = await t.evaluate('__probe.selfTest()');
+  if (self.genuine && self.mutatedTextFlagged && self.blankNoDetection) ok('probe self-test: genuine text matches, a changed byte is flagged, a blank canvas yields nothing');
+  else fail(`probe self-test: ${JSON.stringify(self)}`);
+
+  phase = 'probe';
+  const results = { base: BASE, fragment, modes: {}, ecc: [] };
+  for (const mode of ['ics', 'link']) {
+    await t.evaluate(`(() => { const r = document.querySelector('#payload input[value="${mode}"]'); if (!r.checked) r.click(); return true; })()`);
+    await sleep(200);
+    if (!await waitFor(`document.querySelectorAll('[data-qr-panel] .qr svg').length >= ${EVENTS.length + 1}`)) throw new Error(`codes not rendered in ${mode} mode`);
+    const panels = await t.evaluate(`__probe.probePanels({ sweep: ${SWEEP} })`);
+    results.modes[mode] = panels;
+    if (panels.length !== EVENTS.length + 1) fail(`${mode}: ${panels.length} codes rendered, expected ${EVENTS.length + 1}`);
+    for (const p of panels) {
+      const label = `${mode} ${p.where} "${p.title}" ${p.bytes} B v${p.version} ${p.ecc}`;
+      if (p.roundTrip.ok && p.detections === 1) ok(`${label}: decodes byte for byte`);
+      else fail(`${label}: ${JSON.stringify(p.roundTrip)} (detections: ${p.detections})`);
+      if (!p.text.startsWith(mode === 'link' ? BASE + '#' : 'BEGIN:VCALENDAR\r\n')) fail(`${label}: text does not look like a ${mode} payload`);
+    }
+    if (SWEEP) {
+      phase = 'sweep';
+      for (const p of panels) {
+        log('ECC alternatives', mode, p.where, p.title);
+        results.ecc.push({ mode, where: p.where, title: p.title, ...(await t.evaluate(`__probe.eccAlternatives(${JSON.stringify(p.text)})`)) });
+      }
+      phase = 'probe';
+    }
+  }
+
+  phase = 'hygiene';
+  const offOrigin = requests.filter((r) => !r.url.startsWith(BASE) && !r.url.startsWith('data:'));
+  if (offOrigin.length) fail(`requests beyond the dev server: ${offOrigin.map((r) => r.url).join(', ')}`);
+  else ok(`${requests.filter((r) => !r.url.startsWith('data:')).length} requests, all to ${BASE}`);
+  const loud = logEntries.filter((e) => e.level === 'error' || e.level === 'warning');
+  if (loud.length) fail(`console errors/warnings: ${loud.map((e) => e.text).join(' | ')}`);
+  else ok('no console error or warning (no CSP violation)');
+  if (exceptions.length) fail(`uncaught exceptions: ${exceptions.map((e) => e.text).join(' | ')}`);
+  else ok('no uncaught exception');
+  results.hygiene = { requests, logEntries, exceptions };
+  if (OUT) { await writeFile(OUT, JSON.stringify(results, null, 1)); log('results written to', OUT); }
+  await t.close();
+} catch (e) {
+  fail(`gate aborted: ${e.message}`);
+} finally {
+  await cleanup();
+}
+console.log(failures.length ? `browser gate: ${failures.length} failure(s)` : 'browser gate: all checks passed');
+process.exit(failures.length ? 1 : 0);
