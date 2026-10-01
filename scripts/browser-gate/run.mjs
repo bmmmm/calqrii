@@ -61,16 +61,21 @@ async function waitHttp(url, ms) {
 }
 
 const children = [];
+let stopping = false;
+// A child that dies mid-run (the dev server, Chrome) is named with the end of its stderr; loads fail after that.
 function start(cmd, args, label) {
   const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  p.stderr.on('data', () => {});
+  let tail = '';
+  p.stderr.on('data', (d) => { tail = (tail + d).slice(-2000); });
   p.on('error', (e) => { log(label, 'failed to start:', e.message); });
+  p.on('exit', (code, signal) => { if (!stopping) log(label, `exited (${code ?? signal}) --`, tail.trim().split('\n').slice(-5).join(' | ') || 'no stderr'); });
   children.push(p);
   return p;
 }
 let profile = null;
 async function cleanup() {
   if (KEEP) return;
+  stopping = true;
   for (const p of children) { try { p.kill(); } catch {} }
   if (profile) await rm(profile, { recursive: true, force: true }).catch(() => {});
 }
@@ -98,9 +103,11 @@ try {
   const exceptions = [];
   const failedLoads = []; // the console message "Failed to load resource" carries no URL; this does
   const urlOf = new Map();
+  const inFlight = new Set(); // request ids sent and neither finished nor failed
   let phase = 'load';
-  t.on('Network.requestWillBeSent', (p) => { urlOf.set(p.requestId, p.request.url); requests.push({ url: p.request.url, type: p.type, phase }); });
-  t.on('Network.loadingFailed', (p) => { if (!p.canceled) failedLoads.push(`${urlOf.get(p.requestId) ?? p.requestId} (${p.errorText})`); });
+  t.on('Network.requestWillBeSent', (p) => { urlOf.set(p.requestId, p.request.url); inFlight.add(p.requestId); requests.push({ url: p.request.url, type: p.type, phase }); });
+  t.on('Network.loadingFinished', (p) => inFlight.delete(p.requestId));
+  t.on('Network.loadingFailed', (p) => { inFlight.delete(p.requestId); if (!p.canceled) failedLoads.push(`${urlOf.get(p.requestId) ?? p.requestId} (${p.errorText})`); });
   t.on('Log.entryAdded', (p) => logEntries.push({ ...p.entry, phase }));
   t.on('Runtime.exceptionThrown', (p) => exceptions.push({ text: p.exceptionDetails.exception?.description || p.exceptionDetails.text, phase }));
   t.on('Runtime.consoleAPICalled', (p) => {
@@ -114,6 +121,14 @@ try {
     const end = Date.now() + ms;
     while (Date.now() < end) { if (await t.evaluate(expr).catch(() => false)) return true; await sleep(100); }
     return false;
+  }
+  // A page step's deadline: when it passes with loads still in flight (a slow, healthy load), wait for them
+  // (up to 10 s) and look once more before calling the page not ready.
+  async function ready(expr, ms = 3000) {
+    if (await waitFor(expr, ms)) return true;
+    const end = Date.now() + 10000;
+    while (inFlight.size && Date.now() < end) await sleep(100);
+    return waitFor(expr, 500);
   }
   // serve.py has no backlog trouble any more, but a load can still fail (a busy machine, a cold Chrome); a
   // reload cures it. A step is retried ONLY when a load failed during the attempt -- a page that is not ready
@@ -133,7 +148,7 @@ try {
       if (attempt === 1 && !reload) await t.send('Page.navigate', { url: BASE + '#' + fragment });
       else await t.send('Page.reload', { ignoreCache: true });
       await sleep(300);
-      if (await waitFor(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) return attempt;
+      if (await ready(`document.querySelectorAll('#view-list > li').length === ${EVENTS.length} && !document.querySelector('#view-section').hidden`)) return attempt;
       if (!loadFailed(m)) throw new Error('view not ready and no load failed -- not retried');
       log('view not ready, retry', attempt, '--', failedSince(m));
     }
@@ -195,7 +210,7 @@ try {
     rewind(bootMark);
     if (attempt === 1) await t.send('Page.navigate', { url: BASE + 'import.html' });
     else await t.send('Page.reload', { ignoreCache: true });
-    if (await waitFor(`!!document.querySelector('#imp-text') && document.querySelector('#imp-text').placeholder !== ''`)) break;
+    if (await ready(`!!document.querySelector('#imp-text') && document.querySelector('#imp-text').placeholder !== ''`)) break;
     if (!loadFailed(bootMark)) throw new Error('import page did not boot and no load failed -- not retried');
     if (attempt === 5) throw new Error('import page did not boot');
     log('import page not booted, retry', attempt, '--', failedSince(bootMark));
@@ -215,9 +230,9 @@ try {
     for (let attempt = 1; attempt <= 3 && !opened; attempt++) {
       rewind(openMark);
       if (attempt === 1) await t.evaluate(`document.querySelector('#imp-open').click(), true`);
-      else if (await t.evaluate('location.href') === openHref) await t.send('Page.reload', { ignoreCache: true });
+      else if (await t.evaluate('location.href').catch(() => '') === openHref) await t.send('Page.reload', { ignoreCache: true });
       else await t.send('Page.navigate', { url: openHref });
-      opened = await waitFor(`document.querySelectorAll('#view-list > li').length === ${IMPORT_TITLES.length} && !document.querySelector('#view-section').hidden`, 6000);
+      opened = await ready(`document.querySelectorAll('#view-list > li').length === ${IMPORT_TITLES.length} && !document.querySelector('#view-section').hidden`, 6000);
       if (!opened && !loadFailed(openMark)) break; // no failed load: a fault of the page, not retried
       if (!opened && attempt < 3) log('import: "Open in calqrii" did not reach the view, retry', attempt, '--', failedSince(openMark));
     }

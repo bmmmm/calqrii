@@ -25,6 +25,10 @@ function contentLines(text) {
   return text.replace(/\r?\n[ \t]/g, '').split(/\r?\n/).filter((l) => l !== '');
 }
 
+// Date values never contain a colon; Outlook writes an unquoted TZID=tzone://Microsoft/Utc.
+const DATE_PROPS = new Set(['DTSTART', 'DTEND', 'RECURRENCE-ID', 'EXDATE', 'RDATE']);
+const MS_UTC = 'tzone://Microsoft/Utc';
+
 /** 'NAME;P=1;Q="a:b":value' → { name, params: { P: '1', Q: 'a:b' }, value } */
 function parseLine(line) {
   let i = 0;
@@ -35,6 +39,7 @@ function parseLine(line) {
     else if (c === ':' && !quoted) break;
   }
   if (i >= line.length) return null;
+  if (DATE_PROPS.has(line.slice(0, i).split(';')[0].toUpperCase())) i = line.lastIndexOf(':');
   const head = line.slice(0, i).split(';');
   const params = {};
   for (const p of head.slice(1)) {
@@ -63,6 +68,29 @@ function wallClock(utcDate, tz) {
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 }
 
+const sameCache = new Map();
+/**
+ * Whether zones a and b show the same wall clock at every hour of `year`
+ * (UTC): "W. Europe Standard Time" → Europe/Berlin is the same as a page in
+ * Europe/Vienna, CLDR's legacy Asia/Calcutta the same as Asia/Kolkata.
+ */
+function sameZone(a, b, year) {
+  if (a === b) return true;
+  const key = `${a}|${b}|${year}`;
+  let same = sameCache.get(key);
+  if (same === undefined) {
+    wallClock(new Date(0), a); // fills dtfCache for both zones
+    wallClock(new Date(0), b);
+    const fa = dtfCache.get(a);
+    const fb = dtfCache.get(b);
+    const end = Date.UTC(year + 1, 0, 1);
+    same = true;
+    for (let t = Date.UTC(year, 0, 1); t < end && same; t += 3600000) same = fa.format(t) === fb.format(t);
+    sameCache.set(key, same);
+  }
+  return same;
+}
+
 function isTz(tz) {
   try {
     new Intl.DateTimeFormat('en', { timeZone: tz });
@@ -73,9 +101,9 @@ function isTz(tz) {
 }
 
 /**
- * DTSTART/DTEND value → { date, time, allDay, foreign, shifted } as wall
- * clock in `tz`. UTC (Z) and TZID values are converted (`foreign`: the
- * source zone differs from `tz`; `shifted`: the conversion moved the
+ * DTSTART/DTEND value → { date, time, allDay, zone, shifted } as wall
+ * clock in `tz`. UTC (Z) and TZID values are converted (`zone`: the source
+ * zone, null when nothing was converted; `shifted`: the conversion moved the
  * calendar day); floating values stay as written. null when not a date.
  */
 export function parseDateTime(value, params, tz, warnings) {
@@ -83,20 +111,23 @@ export function parseDateTime(value, params, tz, warnings) {
   if (!m) return null;
   const date = `${m[1]}-${m[2]}-${m[3]}`;
   if (!isValidDate(date)) return null;
-  if (m[4] === undefined || params.VALUE === 'DATE') return { date, time: '', allDay: true, foreign: false, shifted: false };
+  if (m[4] === undefined || params.VALUE === 'DATE') return { date, time: '', allDay: true, zone: null, shifted: false };
   const time = `${m[4]}:${m[5]}`;
   if (!isValidTime(time)) return null;
   let wall = null;
-  if (m[6] === 'Z') wall = wallClock(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])), tz);
-  else if (params.TZID && params.TZID !== tz) {
-    const tzid = WINDOWS_TZ[params.TZID] ?? params.TZID; // Outlook writes Windows names
+  let src = null;
+  if (m[6] === 'Z') {
+    src = 'UTC';
+    wall = wallClock(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])), tz);
+  } else if (params.TZID && params.TZID !== tz) {
+    const tzid = params.TZID === MS_UTC ? 'UTC' : WINDOWS_TZ[params.TZID] ?? params.TZID; // Outlook writes Windows names
     if (tzid !== tz) {
-      if (isTz(tzid)) wall = wallClock(zonedToUtc(date, time, tzid), tz);
+      if (isTz(tzid)) { src = tzid; wall = wallClock(zonedToUtc(date, time, tzid), tz); }
       else warnings.add('imp_warn_tz');
     }
   }
-  if (!wall) return { date, time, allDay: false, foreign: false, shifted: false };
-  return { ...wall, allDay: false, foreign: true, shifted: wall.date !== date };
+  if (!wall) return { date, time, allDay: false, zone: null, shifted: false };
+  return { ...wall, allDay: false, zone: src, shifted: wall.date !== date };
 }
 
 /** DURATION (§3.3.6) → minutes; null when unsupported (weeks are fine, negative is not). */
@@ -106,6 +137,9 @@ export function parseDuration(value) {
   const [, w = 0, d = 0, h = 0, mi = 0] = m;
   return ((+w * 7 + +d) * 24 + +h) * 60 + +mi;
 }
+
+/** Plain decimal digits → number; null for anything else ('1e3', '0x10', ' 5', ''). */
+const digits = (s) => (/^\d+$/.test(s) ? Number(s) : null);
 
 const FREQ_MAP = { DAILY: 'daily', WEEKLY: 'weekly', MONTHLY: 'monthly', YEARLY: 'yearly' };
 const RRULE_KNOWN = new Set(['FREQ', 'INTERVAL', 'BYDAY', 'COUNT', 'UNTIL', 'WKST']);
@@ -127,8 +161,8 @@ export function parseRrule(value, start, tz = 'UTC') {
   if (Object.keys(parts).some((k) => !RRULE_KNOWN.has(k))) return null;
   const freq = FREQ_MAP[parts.FREQ];
   if (!freq) return null;
-  const interval = parts.INTERVAL === undefined ? 1 : Number(parts.INTERVAL);
-  if (!Number.isInteger(interval) || interval < 1) return null;
+  const interval = parts.INTERVAL === undefined ? 1 : digits(parts.INTERVAL);
+  if (interval === null || interval < 1) return null;
   let range = interval > 99;
   let byDay = [];
   if (parts.BYDAY !== undefined) {
@@ -142,9 +176,10 @@ export function parseRrule(value, start, tz = 'UTC') {
   }
   let count = null;
   let until = null;
+  if (parts.COUNT !== undefined && parts.UNTIL !== undefined) return null; // RFC 5545 forbids both: which end was meant?
   if (parts.COUNT !== undefined) {
-    count = Number(parts.COUNT);
-    if (!Number.isInteger(count) || count < 1) return null;
+    count = digits(parts.COUNT);
+    if (count === null || count < 1) return null;
     if (count > 999) range = true;
   } else if (parts.UNTIL !== undefined) {
     const m = DT_RE.exec(parts.UNTIL);
@@ -157,9 +192,10 @@ export function parseRrule(value, start, tz = 'UTC') {
 /**
  * Every VEVENT of an iCalendar stream → [{ ev, warnings }] in file order. The
  * event is normalized but not validated (the page shows the errors). Times
- * are converted to `tz`, the zone the page will serialize them in.
+ * are converted to `tz`, the zone the page will serialize them in; `today`
+ * (YYYY-MM-DD) tells how far an open series runs (default: until the year after its start).
  */
-export function parseIcs(text, { tz }) {
+export function parseIcs(text, { tz, today = null }) {
   const events = [];
   let cur = null;
   let depth = 0; // nested components (VALARM) inside the VEVENT are skipped
@@ -189,7 +225,7 @@ export function parseIcs(text, { tz }) {
     const uid = e.props.find((p) => p.name === 'UID');
     if (uid && overridden.has(uid.value)) e.warnings.add('imp_warn_exdate');
   }
-  return events.map((e) => buildEvent(e, tz));
+  return events.map((e) => buildEvent(e, tz, today));
 }
 
 /** Text fields beyond the model's limits are cut, a non-http(s) URL dropped; both reported once. */
@@ -206,7 +242,23 @@ function addMinutesZoned(date, time, minutes, tz) {
   return wallClock(new Date(zonedToUtc(date, time, tz).getTime() + minutes * 60000), tz);
 }
 
-function buildEvent({ props, warnings }, tz) {
+const UNIT_DAYS = { daily: 1, weekly: 7, monthly: 31, yearly: 366 }; // upper bounds: a COUNT series' end is over-estimated
+
+/**
+ * Whether a series given in `zone` leaves `tz`'s wall clock in a year it runs: from its start through
+ * its end (UNTIL, or estimated from COUNT), but no further than next year -- tz data knows no later
+ * rules -- and at most the 11 years up to there (the cost: about 13 ms per new zone pair and year).
+ */
+function seriesDrifts(zone, tz, startDate, rec, today) {
+  const startYear = +startDate.slice(0, 4);
+  const nextYear = Math.max(startYear, today ? +today.slice(0, 4) : startYear) + 1;
+  const end = rec.until ?? (rec.count ? addDays(startDate, rec.count * rec.interval * UNIT_DAYS[rec.freq]) : null);
+  const last = end ? Math.min(+end.split('-')[0], nextYear) : nextYear;
+  for (let y = Math.max(startYear, last - 10); y <= last; y++) if (!sameZone(zone, tz, y)) return true;
+  return false;
+}
+
+function buildEvent({ props, warnings }, tz, today) {
   const first = (name) => props.find((p) => p.name === name);
   const text = (name) => { const p = first(name); return p ? unescapeText(p.value) : ''; };
   const startProp = first('DTSTART');
@@ -247,7 +299,7 @@ function buildEvent({ props, warnings }, tz) {
       const rec = start.shifted ? null : parseRrule(rrule.value, start.date, tz);
       if (rec && rec !== 'range') {
         partial.recurrence = rec;
-        if (start.foreign) warnings.add('imp_warn_series_tz');
+        if (start.zone && seriesDrifts(start.zone, tz, start.date, rec, today)) warnings.add('imp_warn_series_tz');
       } else warnings.add(rec === 'range' ? 'imp_warn_rule_range' : 'imp_warn_rule');
       if (first('EXDATE') || first('RDATE')) warnings.add('imp_warn_exdate');
     }
@@ -455,7 +507,7 @@ export function parseInput(text, { tz, today }) {
   const kind = detectKind(text);
   const truncated = kind !== 'empty' && text.length > MAX_INPUT_CHARS;
   const src = truncated ? text.slice(0, MAX_INPUT_CHARS) : text;
-  const raw = kind === 'ics' ? parseIcs(src, { tz }) : kind === 'text' ? parseText(src, { today }) : [];
+  const raw = kind === 'ics' ? parseIcs(src, { tz, today }) : kind === 'text' ? parseText(src, { today }) : [];
   const items = raw.map(({ ev, warnings }, i) => {
     const e = { ...ev, id: i + 1 };
     const errors = validateEvent(e);

@@ -34,13 +34,16 @@ function fail(msg) { console.error('FAIL: ' + msg); failures++; }
 function ok(msg) { console.log('ok   ' + msg); }
 const read = (name) => readFileSync(join(root, name), 'utf8');
 
+// Whitespace and comments: what may stand between `import`/`from` and what follows it.
+const GAP = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*\n)*`;
+
 // --- 1. forbidden patterns over every shipped file
 const forbidden = [
   [/localStorage|sessionStorage|indexedDB|document\.cookie|cookieStore|serviceWorker|caches\./, 'storage API'],
   [/history\.(pushState|replaceState|go|back|forward)/, 'history write'],
   [/location\.(hash|href|search|pathname)\s*=(?!=)/, 'address bar write'],
   [/location\.(assign|replace|reload)\s*\(/, 'navigation call'],
-  [/\bimport\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/, 'network or dynamic import'],
+  [new RegExp(String.raw`\bimport${GAP}\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon`), 'network or dynamic import'],
   // The bare identifier, not just a call: `const f = fetch` would dodge /fetch\(/. Only NETWORK_MODULE may name it.
   [/\bfetch\b/, `fetch outside ${NETWORK_MODULE}`, (name) => name !== NETWORK_MODULE],
   [/\beval\s*\(|new\s+Function\s*\(/, 'code from strings'],
@@ -113,12 +116,46 @@ for (const page of Object.keys(PAGES)) {
 
 // Specifiers of a module's static imports and re-exports, over-read on purpose (fail closed): `from '…'`
 // anywhere, so no clause shape (a comment or `;` inside the braces, `as "x;y"`) can hide one, and a
-// side-effect `import '…'` at a statement start (line start, after `;` `{` `}` or a block comment). The
-// price: a string literal ending in the word `from`, or `; import '…'` inside a comment or string, fails
-// with the file named -- reword it. Dynamic import() is §1's job.
+// side-effect `import '…'` at a statement start (line start, after `;` `{` `}` `)` or a block comment);
+// comments may stand before the specifier. The price: a string literal ending in the word `from`, or
+// `; import '…'` inside a comment or string, fails with the file named -- reword it. Dynamic import()
+// is §1's job.
+// Two passes, united: a GAP can swallow a string that looks like a comment (and a live import behind it),
+// so the plain reading without comments in the gap always runs too.
+const IMPORT_RES = [
+  /\bfrom\s*['"]([^'"]+)['"]|(?:^|[;{})]|\*\/)\s*import\s*['"]([^'"]+)['"]/gm,
+  new RegExp(String.raw`\bfrom${GAP}['"]([^'"]+)['"]|(?:^|[;{})]|\*/)\s*import${GAP}['"]([^'"]+)['"]`, 'gm'),
+];
 function importSpecifiers(src) {
-  const re = /\bfrom\s*['"]([^'"]+)['"]|(?:^|[;{}]|\*\/)\s*import\s*['"]([^'"]+)['"]/gm;
-  return [...src.matchAll(re)].map((m) => m[1] ?? m[2]);
+  return [...new Set(IMPORT_RES.flatMap((re) => [...src.matchAll(re)].map((m) => m[1] ?? m[2])))];
+}
+
+/**
+ * The source with every comment blanked (newlines kept). Strings and templates are stepped over; regex
+ * literals are not understood: a quote inside one makes the rest of its line read as a string, so a
+ * commented-out import behind it on that line still counts as live (not caught, like HEAD before it).
+ */
+function blankComments(src) {
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c && (c === '`' || src[j] !== '\n')) j += src[j] === '\\' ? 2 : 1;
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else if (src.startsWith('//', i) || src.startsWith('/*', i)) {
+      const close = src[i + 1] === '/' ? src.indexOf('\n', i) : src.indexOf('*/', i + 2);
+      const end = close === -1 ? src.length : src[i + 1] === '/' ? close : close + 2;
+      out += src.slice(i, end).replace(/[^\n]/g, ' ');
+      i = end;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
 
 // --- 5. module graph: static relative imports only, closed over SHIPPED, pinned per page
@@ -126,7 +163,7 @@ function importSpecifiers(src) {
   const seen = new Set(['style.css', ...Object.keys(PAGES)]);
   let bad = 0;
   for (const [page, entry] of Object.entries(PAGES)) {
-    const scripts = [...stripComments(page).matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
+    const scripts = [...stripComments(page).matchAll(/<script\b[^>]*\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)].map((m) => m[1] ?? m[2] ?? m[3]);
     if (!scripts.includes(entry)) fail(`${page} does not load its entry ${entry}`);
     const reached = new Set(scripts);
     const queue = [...scripts]; // every script the page loads, not only its entry: a second module script brings its own imports
@@ -134,7 +171,11 @@ function importSpecifiers(src) {
       const name = queue.shift();
       if (!SHIPPED.includes(name)) { fail(`${name} is imported but not in SHIPPED`); bad++; continue; }
       reached.add(name);
-      for (const spec of importSpecifiers(read(name))) {
+      const code = read(name);
+      // An import read only from a comment (a commented-out line) would stand in for a real one in the pin.
+      const live = new Set(importSpecifiers(blankComments(code)));
+      for (const spec of importSpecifiers(code)) {
+        if (!live.has(spec)) { fail(`${name}: ${JSON.stringify(spec.slice(0, 40))} is imported only inside a comment (or a comment confuses the reader) -- remove or reword it`); bad++; }
         if (!spec.startsWith('./') || spec.includes('/', 2)) { fail(`${name} imports ${JSON.stringify(spec.slice(0, 40))}: only ./x.js is allowed`); bad++; continue; }
         const dep = spec.slice(2);
         if (!reached.has(dep) && !queue.includes(dep)) queue.push(dep);

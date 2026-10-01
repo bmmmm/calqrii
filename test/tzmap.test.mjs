@@ -1,6 +1,7 @@
 // The generated Windows → IANA table: every target is a zone this runtime knows
 // (what a browser needs to convert with it), the file is shaped like the generator
-// writes it (sorted, no duplicate key hiding behind a later one). Run: node test/tzmap.test.mjs
+// writes it (sorted, no duplicate key hiding behind a later one), NOTICE names its
+// CLDR release. Run: node test/tzmap.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { WINDOWS_TZ } from '../tzmap.js';
@@ -20,6 +21,11 @@ assert.equal(written.length, keys.length, 'no key is written twice (a later one 
 for (const [win, iana] of Object.entries(WINDOWS_TZ)) {
   assert.doesNotThrow(() => new Intl.DateTimeFormat('en', { timeZone: iana }), `${win} → ${iana} is a zone this runtime knows`); checks++;
 }
+const [, tag, version] = source.match(/\(CLDR (\S+), territory 001, otherVersion (\S+)\)/) ?? [];
+ok(tag && version, 'the header names the CLDR release and the table version');
+const notice = readFileSync(new URL('../NOTICE', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+ok(notice.includes(`(CLDR ${tag}, otherVersion ${version};`), `NOTICE names the same CLDR release and version as tzmap.js (${tag}, ${version})`);
+
 assert.equal(WINDOWS_TZ['W. Europe Standard Time'], 'Europe/Berlin', 'the Outlook default for central Europe'); checks++;
 
 console.log(`tzmap.test.mjs: ${checks} checks passed`);

@@ -37,7 +37,8 @@ and the two scripts.
   heuristics DE/EN, title before/after layout), `parseInput` (detect, validate,
   past flag). Unsupported input becomes an `imp_warn_*` key, never a silent change.
 - `tzmap.js` — Windows zone name → IANA (Outlook's `TZID`), generated from Unicode
-  CLDR by `scripts/gen-tzmap.mjs` (it fetches the table; run it by hand, not part of any gate); do not edit.
+  CLDR by `scripts/gen-tzmap.mjs` (it fetches the table of the pinned CLDR release; run it by hand,
+  `--check` compares instead of writing; not part of any gate); do not edit. NOTICE names the same release (tzmap.test).
 - `geocode.js` — opt-in Nominatim address search; the only module that may
   name the network (`fetch` exactly once, one origin — the gate pins both).
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
@@ -49,10 +50,12 @@ and the two scripts.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
   shipped files (both pages: `PAGES` maps each HTML entry to its module, `PAGE_GRAPH`
   pins each page's exact module set — a new import is a one-line change there; §5 walks every
-  quoted lower-case `<script src>` of a page and over-reads imports on purpose: `from '…'` anywhere
-  and a side-effect `import '…'` at a statement start. A string ending in the word `from`, or
-  `; import '…'` in a comment or string, usually fails with the file named — reword it. Still
-  unseen: a comment between `from`/`import` and the specifier, and an unquoted or upper-case `src`);
+  `<script src>` of a page (any quoting and case) and over-reads imports on purpose: `from '…'`
+  anywhere and a side-effect `import '…'` at a statement start, comments allowed before the
+  specifier. A string ending in the word `from`, or `; import '…'` in a comment or string, usually
+  fails with the file named — reword it; so does an import that appears only inside a comment
+  (a commented-out line would stand in for a removed real one in the pin). Still unseen: such a
+  comment behind a regex literal holding a quote on the same line);
   `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 - `scripts/browser-gate/` — `npm run gate:browser`: headless Chrome over the
   DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes

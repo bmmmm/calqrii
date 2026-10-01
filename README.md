@@ -57,12 +57,13 @@ series here: a rule the editor cannot express (ordinal weekdays,
 `BYMONTHDAY`, a start that moves to another day in your zone, …) is dropped
 with a note rather than approximated; a series given in another zone or in
 UTC keeps its rule but gets a note (after a daylight-saving change its times
-can be an hour off); skipped, added or moved dates (`EXDATE`, `RDATE`,
+can be an hour off) — unless that zone keeps your zone's offsets in the years the series runs
+(up to next year, at most eleven); skipped, added or moved dates (`EXDATE`, `RDATE`,
 `RECURRENCE-ID`) are not imported, with a note on the series; a series with
 a `COUNT` above 999 or an interval above 99 is imported as a single event
-with a note. Windows zone
+with a note, and so is a rule with both `COUNT` and `UNTIL`. Windows zone
 names from Outlook exports are mapped to IANA zones (Unicode CLDR table in
-`tzmap.js`); only the display form `(UTC+01:00) …` and unknown names keep the
+`tzmap.js`), `tzone://Microsoft/Utc` is read as UTC; only the display form `(UTC+01:00) …` and unknown names keep the
 time as written, with a note. The page never uses the network (`connect-src
 'none'`): the file and the text stay in the browser, the link carries the
 chosen events in its `#fragment` — and, once opened, in the browser history.

@@ -190,6 +190,30 @@ const FOREIGN = [
   const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:u', 'DTSTART;TZID=UTC:20261005T190000', 'SUMMARY:x', 'RRULE:FREQ=WEEKLY', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   deq(parseIcs(ics, { tz: 'UTC' })[0].warnings, [], 'a TZID equal to the page zone is not foreign, even when it is also a Windows key (UTC)');
 }
+{
+  // Zones are compared by their offsets over the year, not by name.
+  const series = (dtstart) => ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:u', dtstart, 'SUMMARY:x', 'RRULE:FREQ=WEEKLY', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const notes = (dtstart, tz) => parseIcs(series(dtstart), { tz })[0].warnings;
+  deq(notes('DTSTART;TZID=W. Europe Standard Time:20261105T190000', 'Europe/Vienna'), [], 'Berlin series, Vienna page: same offsets all year, no zone note');
+  deq(notes('DTSTART;TZID=India Standard Time:20261105T190000', 'Asia/Kolkata'), [], 'CLDR legacy Asia/Calcutta is the page zone Asia/Kolkata');
+  deq(notes('DTSTART:20261105T190000Z', 'Etc/UTC'), [], 'a UTC series on a UTC page is not foreign');
+  deq(notes('DTSTART;TZID=W. Europe Standard Time:20261105T190000', 'Europe/London'), ['imp_warn_series_tz'], 'same DST dates, other offset: still foreign');
+  deq(notes('DTSTART;TZID=Europe/Berlin:20261105T190000', 'Africa/Lagos'), ['imp_warn_series_tz'], 'same winter offset, no DST on the page: foreign');
+  const running = (dtstart, rule, tz) => parseInput(series(dtstart).replace('RRULE:FREQ=WEEKLY', rule), { tz, today: TODAY }).items[0].warnings;
+  deq(running('DTSTART;TZID=Europe/Istanbul:20080107T190000', 'RRULE:FREQ=WEEKLY', 'Europe/Athens'), ['imp_warn_series_tz'], 'a series from 2008 still running: Istanbul left Athens\' offsets in 2016, so it drifts today');
+  deq(running('DTSTART;TZID=America/Denver:20211231T190000', 'RRULE:FREQ=WEEKLY;UNTIL=20221231', 'America/Ciudad_Juarez'), ['imp_warn_series_tz'], 'a series starting in late December is compared in the years it runs, not only its start year');
+  deq(running('DTSTART;TZID=America/Denver:20201231T190000', 'RRULE:FREQ=WEEKLY;UNTIL=20211231', 'America/Ciudad_Juarez'), [], '… and one that ended before the zones split gets no note');
+  deq(running('DTSTART;TZID=America/Denver:20211231T190000', 'RRULE:FREQ=WEEKLY;UNTIL=20400101', 'America/Ciudad_Juarez'), ['imp_warn_series_tz'], 'a far UNTIL does not push the window past the years that already ran');
+  deq(running('DTSTART;TZID=Europe/Istanbul:20080108T190000', 'RRULE:FREQ=WEEKLY;COUNT=3', 'Europe/Athens'), [], 'a COUNT series is compared in the weeks it ran, not up to today');
+  deq(running('DTSTART;TZID=Europe/Berlin:20260105T190000', 'RRULE:FREQ=YEARLY;INTERVAL=9;COUNT=999', 'Europe/London'), ['imp_warn_series_tz'], 'an estimated end beyond year 9999 (five-digit year) still ends the window at next year');
+}
+{
+  const single = (dtstart) => parseIcs(['BEGIN:VEVENT', 'UID:u', dtstart, 'SUMMARY:x', 'END:VEVENT'].join('\r\n'), { tz: TZ })[0];
+  const plain = single('DTSTART;TZID=tzone://Microsoft/Utc:20261105T190000');
+  deq([plain.ev.date, plain.ev.startTime, plain.warnings], ['2026-11-05', '20:00', []], 'Outlook\'s unquoted TZID=tzone://Microsoft/Utc: the value is after the last colon, the zone is UTC');
+  const quoted = single('DTSTART;TZID="tzone://Microsoft/Utc":20261105T190000');
+  deq([quoted.ev.startTime, quoted.warnings], ['20:00', []], '… and quoted');
+}
 eq(unescapeText(String.raw`a\\b\;c\,d\ne\Nf`), 'a\\b;c,d\ne\nf', 'unescape all five');
 
 // --- rules and durations in isolation
@@ -203,6 +227,9 @@ eq(parseRrule('FREQ=DAILY;INTERVAL=100', '2026-10-05'), 'range', 'INTERVAL above
 eq(parseRrule('FREQ=DAILY;COUNT=0', '2026-10-05'), null, 'COUNT 0 refused');
 eq(parseRrule('FREQ=DAILY;COUNT=1000', '2026-10-05'), 'range', 'COUNT above the editor range: refused as range');
 eq(parseRrule('FREQ=DAILY;COUNT=999', '2026-10-05').count, 999, 'COUNT at the editor limit is kept');
+eq(parseRrule('FREQ=DAILY;COUNT=3;UNTIL=20261231', '2026-10-05'), null, 'COUNT and UNTIL together (RFC 5545 forbids it) is refused, not read as COUNT');
+eq(parseRrule('FREQ=DAILY;COUNT=0x10', '2026-10-05'), null, 'COUNT in hex is no number');
+eq(parseRrule('FREQ=DAILY;INTERVAL=1e3', '2026-10-05'), null, 'INTERVAL in exponent form is no number, not a range');
 eq(parseRrule('FREQ=DAILY;INTERVAL=99', '2026-10-05').interval, 99, 'INTERVAL at the editor limit is kept');
 eq(parseRrule('FREQ=WEEKLY;INTERVAL=100;BYDAY=1MO', '2026-10-05'), null, 'a range overrun next to an unsupported part is plainly unsupported');
 eq(parseRrule('FREQ=WEEKLY;BYDAY=TU', '2026-10-05'), null, 'BYDAY without the start weekday is refused');
