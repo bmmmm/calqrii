@@ -62,6 +62,7 @@ const qrMemo = new Map(); // QR text → qrSvg() result, or { error, bytes }
 const linkMemo = new Map(); // linkKey(events) → link; filled by prepareLinks() before a render (linkFor is async: it compresses)
 let renderSeq = 0; // render() awaits the links; an older render that resumes after a newer one started gives up
 let meterSeq = 0; // same for the payload meter, which measures the draft's own link
+const openMore = new Set(); // event ids (or 'all') whose "More" fold is open, kept across re-renders
 const panelData = new WeakMap(); // [data-qr-panel] → { text, ics, stem }: what was rendered, for the download buttons
 const icsOpts = () => ({ now: SESSION_NOW, tz: state.tz });
 const geoMemo = new Map(); // lang + query → address results, for this page load only (the policy asks for a cache)
@@ -306,8 +307,6 @@ function renderFieldErrors(keys) {
     if (!slot.textContent.includes(text)) slot.textContent = slot.textContent ? `${slot.textContent} ${text}` : text;
     slot.hidden = false;
   }
-  // A folded field still counts as shown (isShown): unfold it so its message is seen.
-  if (els.more.querySelector('[aria-invalid="true"]')) els.more.open = true;
   return { first: els.form.querySelector('[data-field][aria-invalid="true"]'), rest };
 }
 
@@ -499,6 +498,9 @@ async function submitEditor(e) {
   const { events, errors } = expandForm();
   if (errors.length) {
     const { first, rest } = renderFieldErrors(errors);
+    // A folded field still counts as shown (isShown): unfold it on submit so its message is seen —
+    // only here, so live validation never reopens a fold the user has closed.
+    if (els.more.querySelector('[aria-invalid="true"]')) els.more.open = true;
     renderSummary(first ? [...rest, 'err_see_fields'] : rest);
     if (first) focusField(first);
     return;
@@ -717,7 +719,12 @@ function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig, ev
   node.querySelector('[data-act="ics"]').textContent = t().dl_ics;
   node.querySelector('[data-act="print"]').textContent = t().print_qr;
   node.querySelector('[data-act="copy"]').textContent = t().copy_qr;
-  node.querySelector('.qr-more > summary').textContent = t().qr_more;
+  // Every render rebuilds the panels: carry an open "More" over, keyed by event (or the combined code).
+  const more = node.querySelector('.qr-more');
+  const moreKey = ev ? ev.id : 'all';
+  more.open = openMore.has(moreKey);
+  more.addEventListener('toggle', () => { if (more.open) openMore.add(moreKey); else openMore.delete(moreKey); });
+  more.querySelector('summary').textContent = t().qr_more;
   node.querySelector('.show-text').textContent = kind === 'link' ? t().show_link : t().show_ics;
   const pre = node.querySelector('pre.qr-text');
   pre.textContent = text;
@@ -998,6 +1005,7 @@ function applyLoaded(res) {
   state.combined = false;
   state.screen = 'view';
   state.openQr.clear();
+  openMore.clear();
   resetEditor();
   const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (res.tz !== browserTz) showBanner(t().tz_foreign(res.tz));
@@ -1101,6 +1109,19 @@ function printPanel(panel) {
 function clearPrintSheet() {
   document.body.classList.remove('print-one');
   for (const el of els.printSheet.children) el.replaceChildren();
+}
+
+// Printing the whole page: every note fold prints open, and closes again afterwards. A code's
+// "More" stays as it is: it holds buttons and the raw calendar text, not reading matter.
+let printUnfolded = [];
+function unfoldForPrint() {
+  if (document.body.classList.contains('print-one')) return; // the one-code sheet shows no fold
+  printUnfolded = [...document.querySelectorAll('details:not([open]):not(.qr-more)')];
+  for (const d of printUnfolded) d.open = true;
+}
+function refoldAfterPrint() {
+  for (const d of printUnfolded) d.open = false;
+  printUnfolded = [];
 }
 
 async function copyPanel(panel, button) {
@@ -1219,6 +1240,8 @@ async function main() {
   els.newEvent.addEventListener('click', startNewEvent);
   window.addEventListener('hashchange', onHashChange);
   window.addEventListener('afterprint', clearPrintSheet);
+  window.addEventListener('beforeprint', unfoldForPrint);
+  window.addEventListener('afterprint', refoldAfterPrint);
   window.addEventListener('beforeunload', (e) => {
     if (state.dirty && state.events.length) { e.preventDefault(); e.returnValue = ''; }
   });

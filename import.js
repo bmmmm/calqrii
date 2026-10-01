@@ -261,6 +261,10 @@ function init() {
   els.showPast.addEventListener('change', () => { state.showPast = els.showPast.checked; renderList(); });
   els.copy.addEventListener('click', copyLink);
   els.open.addEventListener('click', (e) => { if (!state.link) e.preventDefault(); });
+  // Printing: every fold prints open, and closes again afterwards.
+  let unfolded = [];
+  window.addEventListener('beforeprint', () => { unfolded = [...document.querySelectorAll('details:not([open])')]; for (const d of unfolded) d.open = true; });
+  window.addEventListener('afterprint', () => { for (const d of unfolded) d.open = false; unfolded = []; });
   applyLang((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en');
 }
 

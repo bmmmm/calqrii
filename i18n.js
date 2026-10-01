@@ -39,7 +39,7 @@ function recSummary(lang, rec, dayNames) {
 export const STR = {
   en: {
     title: 'calqrii — calendar events as offline QR codes',
-    tagline: 'Calendar events as QR codes — made in your browser, nothing stored.',
+    tagline: 'Calendar events as QR codes — made in your browser, nothing stored. The page itself sends nothing, except for the optional address search.',
     language: 'Language',
     months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
     weekdays_short: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -242,7 +242,7 @@ export const STR = {
   },
   de: {
     title: 'calqrii — Kalendertermine als Offline-QR-Codes',
-    tagline: 'Kalendertermine als QR-Codes — im Browser erzeugt, nichts gespeichert.',
+    tagline: 'Kalendertermine als QR-Codes — im Browser erzeugt, nichts gespeichert. Die Seite selbst sendet nichts, außer bei der optionalen Adresssuche.',
     language: 'Sprache',
     months: ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
     weekdays_short: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
