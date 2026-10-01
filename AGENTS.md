@@ -29,6 +29,13 @@ and the two scripts.
   dates, RRULE, content-hashed UID.
 - `fragment.js` — share-link codec `#v=2&tz=…&e=<base64url(deflate-raw(JSON))>`, v=1 (plain JSON) still read, async; `linkFor`
   builds a share link or a link-mode QR text from a page base.
+- `import.html` · `import.js` — the "extra" page: `.ics` file or pasted text →
+  pick list → share link into the main page's view (`linkFor` with the page's
+  directory as base). No network at all.
+- `parse.js` — pure import parsers: `parseIcs` (unfold, params, TZID/UTC →
+  page zone, DURATION, RRULE subset, VALARM skipped), `parseText` (date/time
+  heuristics DE/EN, title before/after layout), `parseInput` (detect, validate,
+  past flag). Unsupported input becomes an `imp_warn_*` key, never a silent change.
 - `geocode.js` — opt-in Nominatim address search; the only module that may
   name the network (`fetch` exactly once, one origin — the gate pins both).
 - `qr.js` — ECC policy, SVG path, PNG matrix; reads `globalThis.qrcodegen` lazily.
@@ -38,15 +45,17 @@ and the two scripts.
   evaluates the classic script into `globalThis`; `test/page.test.mjs` pins
   the option lists in `index.html` against the model's constants.
 - `scripts/web-smoke.mjs` — zero-storage / CSP / relative-asset gate over the
-  shipped files; `.github/workflows/pages.yml` runs tests + smoke, then deploys.
+  shipped files (both pages: `PAGES` maps each HTML entry to its module); `.github/workflows/pages.yml` runs tests + smoke, then deploys.
 - `scripts/browser-gate/` — `npm run gate:browser`: headless Chrome over the
   DevTools protocol (`cdp.mjs`), `probe.js` evaluated into the page decodes
   every rendered code with `BarcodeDetector` and compares it byte for byte;
-  `--sweep` adds the scale/blur and ECC report. Needs Chrome outside a
-  sandbox and Node ≥ 22; not part of `npm test` or CI.
+  `--sweep` adds the scale/blur and ECC report; an `import` phase pastes a
+  list into `import.html` and follows "Open in calqrii" into the view. Needs
+  Chrome outside a sandbox and Node ≥ 22; not part of `npm test` or CI.
 
 Module graph: `app.js → calendar.js, ics.js, fragment.js, qr.js, i18n.js,
-geocode.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
+geocode.js`; `import.js → parse.js, fragment.js, i18n.js, model.js`;
+`parse.js → model.js, ics.js`; `ics.js`, `fragment.js`, `geocode.js → model.js`. All imports
 static and relative (`./x.js`).
 
 ## Traps
@@ -71,7 +80,9 @@ static and relative (`./x.js`).
   parameter list) and demands an anchor per gated function; keep `.value`
   (also Intl's `formatToParts().value`), `$(` and `readEditor` out of
   `pageBase`, `shareURL`, `eventLink`, `renderQrPanel`, `renderList`,
-  `renderCombined` and `renderView`. Every i18n key named by `index.html` or
+  `renderCombined` and `renderView` — and `els.text` out of `import.js`'s
+  `pageBase` and `renderBar`, which are gated the same way. The CSP is
+  pinned per page (`CONNECT_SRC`): `import.html` has `connect-src 'none'`. Every i18n key named by `index.html` or
   `app.js` must exist in `STR.en` (§9).
 - In JS literals `'\;'` is just `;`. Escaping code and fixtures need the
   backslash doubled (`'\\;'`) or `String.raw`.
@@ -91,7 +102,8 @@ static and relative (`./x.js`).
 2. Every new or changed check has been shown able to fail: one mutation per
    check, counted from the source, then reverted.
 3. `npm run gate:browser` green: `BarcodeDetector` decode of every rendered
-   QR (both payload modes, combined code), no console error or CSP violation,
-   no request beyond the dev server. Run it after any change to the codes,
-   the serializers, the fragment codec or the render paths.
+   QR (both payload modes, combined code), the import page's pasted list
+   opening in the view, no console error or CSP violation, no request beyond
+   the dev server. Run it after any change to the codes, the serializers,
+   the fragment codec, the render paths or the import page.
 4. README "Tested scanners" table maintained when a device test happened.

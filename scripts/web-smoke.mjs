@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Gate over the shipped page: the zero-storage contract (no storage, no
+// Gate over the shipped pages (index.html, import.html): the zero-storage contract (no storage, no
 // network outside geocode.js — one origin, click-only, after consent —, no
 // address-bar writes, no HTML string sinks, no external resources), the meta
 // CSP pinned directive by directive, no inline script
@@ -14,11 +14,15 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const SHIPPED = ['index.html', 'style.css', 'app.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'geocode.js', 'qr.js', 'i18n.js', 'qrcodegen.js'];
+const SHIPPED = ['index.html', 'import.html', 'style.css', 'app.js', 'import.js', 'parse.js', 'calendar.js', 'ics.js', 'model.js', 'fragment.js', 'geocode.js', 'qr.js', 'i18n.js', 'qrcodegen.js'];
+// Every page and its module entry; §2–§5 run per page, the module graphs together must be exactly SHIPPED.
+const PAGES = { 'index.html': 'app.js', 'import.html': 'import.js' };
 const EXTRA_SHIPPED = ['favicon.ico', '404.html', 'robots.txt', 'sitemap.xml', 'LICENSE', 'NOTICE'];
 // The one module allowed to use the network, and the one origin it may name.
 const NETWORK_MODULE = 'geocode.js';
 const NOMINATIM_ORIGIN = 'https://nominatim.openstreetmap.org';
+// Only the page with the address search may connect anywhere; the import page connects nowhere.
+const CONNECT_SRC = { 'index.html': `'self' ${NOMINATIM_ORIGIN}`, 'import.html': "'none'" };
 
 let failures = 0;
 function fail(msg) { console.error('FAIL: ' + msg); failures++; }
@@ -48,12 +52,12 @@ for (const name of SHIPPED) {
 
 // --- 2. CSP pinned directive by directive (parsed the way a browser reads it:
 // comments stripped, first mention wins, names case-insensitive, values as a set)
-const html = read('index.html');
-const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
-{
+const stripComments = (name) => read(name).replace(/<!--[\s\S]*?-->/g, '');
+for (const page of Object.keys(PAGES)) {
+  const htmlNoComments = stripComments(page);
   const tag = htmlNoComments.match(/<meta\s+http-equiv="Content-Security-Policy"[^>]*?content="([^"]*)"/i);
   if (!tag) {
-    fail('index.html: no Content-Security-Policy meta tag with a content attribute');
+    fail(`${page}: no Content-Security-Policy meta tag with a content attribute`);
   } else {
     const norm = (v) => v.split(/\s+/).filter(Boolean).sort().join(' ');
     const got = new Map();
@@ -67,49 +71,51 @@ const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
       ['script-src', "'self'"],
       ['style-src', "'self'"],
       ['img-src', "'self' data:"],
-      ['connect-src', `'self' ${NOMINATIM_ORIGIN}`],
+      ['connect-src', CONNECT_SRC[page]],
       ['base-uri', "'none'"],
       ['form-action', "'none'"],
     ];
     const bad = required
       .filter(([k, v]) => got.get(k) !== norm(v))
       .map(([k, v]) => `${k} must be "${v}", got "${got.get(k) ?? '(absent)'}"`);
-    if (bad.length) fail('index.html CSP: ' + bad.join('; '));
-    else ok('index.html CSP pins ' + required.map(([k]) => k).join(', '));
+    if (bad.length) fail(`${page} CSP: ` + bad.join('; '));
+    else ok(`${page} CSP pins ` + required.map(([k]) => k).join(', '));
   }
-}
 
-// --- 3. nothing inline: the CSP would block it silently
-{
+  // --- 3. nothing inline: the CSP would block it silently
   const inlineScript = /<script(?![^>]*\ssrc=)[^>]*>/i.test(htmlNoComments);
   const styleAttr = /\sstyle=/i.test(htmlNoComments);
   const handler = /\son\w+=/i.test(htmlNoComments);
-  if (inlineScript) fail('index.html has an inline <script> without src');
-  if (styleAttr) fail('index.html has a style= attribute');
-  if (handler) fail('index.html has an on*= handler attribute');
-  if (!inlineScript && !styleAttr && !handler) ok('index.html has no inline script, style attribute or handler attribute');
-}
+  if (inlineScript) fail(`${page} has an inline <script> without src`);
+  if (styleAttr) fail(`${page} has a style= attribute`);
+  if (handler) fail(`${page} has an on*= handler attribute`);
+  if (!inlineScript && !styleAttr && !handler) ok(`${page} has no inline script, style attribute or handler attribute`);
 
-// --- 4. every src/href is relative (Pages serves under /calqrii/) and exists
-{
+  // --- 4. every src/href is relative (Pages serves under /calqrii/) and exists
   let count = 0;
-  let bad = 0;
+  let badRefs = 0;
   for (const m of htmlNoComments.matchAll(/\b(?:src|href)=["']([^"']+)["']/g)) {
     const ref = m[1];
     if (/^[a-z][a-z0-9+.-]*:/i.test(ref)) continue; // scheme: external link, not an asset
     count++;
-    if (ref.startsWith('/')) { fail(`index.html references root-absolute ${ref}`); bad++; continue; }
-    if (!existsSync(join(root, ref))) { fail(`index.html references missing file ${ref}`); bad++; }
+    if (ref.startsWith('/')) { fail(`${page} references root-absolute ${ref}`); badRefs++; continue; }
+    if (ref === './') continue; // the page's own directory: the start page
+    if (!existsSync(join(root, ref))) { fail(`${page} references missing file ${ref}`); badRefs++; }
   }
-  if (count === 0) fail('index.html references no relative asset at all -- the gate has nothing to check');
-  else if (!bad) ok(`index.html: ${count} relative asset references, all present`);
+  if (count === 0) fail(`${page} references no relative asset at all -- the gate has nothing to check`);
+  else if (!badRefs) ok(`${page}: ${count} relative asset references, all present`);
 }
 
 // --- 5. module graph: static relative imports only, closed over SHIPPED
 {
-  const seen = new Set(['index.html', 'style.css']);
-  for (const m of htmlNoComments.matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)) seen.add(m[1]);
-  const queue = ['app.js'];
+  const seen = new Set(['style.css', ...Object.keys(PAGES)]);
+  const queue = [];
+  for (const [page, entry] of Object.entries(PAGES)) {
+    const scripts = [...stripComments(page).matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
+    if (!scripts.includes(entry)) fail(`${page} does not load its entry ${entry}`);
+    for (const s of scripts) seen.add(s);
+    queue.push(entry);
+  }
   let bad = 0;
   while (queue.length) {
     const name = queue.shift();
@@ -124,9 +130,9 @@ const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, '');
   }
   const missing = SHIPPED.filter((n) => !seen.has(n));
   const extra = [...seen].filter((n) => !SHIPPED.includes(n));
-  if (missing.length) { fail(`SHIPPED files never reached from index.html: ${missing.join(', ')}`); bad++; }
-  if (extra.length) { fail(`files reached from index.html but not in SHIPPED: ${extra.join(', ')}`); bad++; }
-  if (!bad) ok(`module graph from index.html is exactly SHIPPED (${SHIPPED.length} files)`);
+  if (missing.length) { fail(`SHIPPED files never reached from a page: ${missing.join(', ')}`); bad++; }
+  if (extra.length) { fail(`files reached from a page but not in SHIPPED: ${extra.join(', ')}`); bad++; }
+  if (!bad) ok(`module graphs from ${Object.keys(PAGES).join(' and ')} are exactly SHIPPED (${SHIPPED.length} files)`);
 }
 
 // --- 6. pages.yml ships every file
@@ -167,7 +173,7 @@ function bodyOf(src, fn) {
 }
 {
   const src = read('app.js');
-  const formRead = [/\breadEditor\b|\.value\b|\$\(/, 'reads the form instead of state'];
+  const formRead = [/\breadEditor\b|\.value\b|\$\(|els\.text\b/, 'reads the form instead of state'];
   const literalOrigin = [/['"`]https?:|location\.href/, 'hard-codes an origin (the page is self-hostable)'];
   // Every gated body must contain anchors from its real body, so a body
   // extracted too short (or emptied) fails loudly instead of passing vacuously.
@@ -184,14 +190,22 @@ function bodyOf(src, fn) {
     ['printPanel', ['panelData.get('], [formRead]],
     ['copyPanel', ['panelData.get('], [formRead]],
   ];
-  for (const [fn, anchors, forbids] of gated) {
-    const body = bodyOf(src, fn);
-    if (!body) { fail(`app.js: ${fn}() not found -- its gate has nothing to check`); continue; }
-    const missing = anchors.filter((a) => !body.includes(a));
-    const hits = forbids.filter(([re]) => re.test(body)).map(([, what]) => what);
-    if (missing.length) fail(`app.js: ${fn}() lacks ${missing.map((a) => `"${a}"`).join(', ')}`);
-    else if (hits.length) fail(`app.js: ${fn}() ${hits.join('; ')}`);
-    else ok(`app.js ${fn}() keeps its anchors, ${forbids.includes(formRead) ? 'reads no form field' : 'names no origin'}`);
+  // The import page builds its link the same way: from state, with the page's own directory as base.
+  const importGated = [
+    ['pageBase', ['location.origin + location.pathname'], [literalOrigin]],
+    ['renderBar', ['linkFor(pageBase(), chosen, state.tz)', 'state.selected'], [formRead, literalOrigin]],
+  ];
+  for (const [file, list] of [['app.js', gated], ['import.js', importGated]]) {
+    const code = read(file);
+    for (const [fn, anchors, forbids] of list) {
+      const body = bodyOf(code, fn);
+      if (!body) { fail(`${file}: ${fn}() not found -- its gate has nothing to check`); continue; }
+      const missing = anchors.filter((a) => !body.includes(a));
+      const hits = forbids.filter(([re]) => re.test(body)).map(([, what]) => what);
+      if (missing.length) fail(`${file}: ${fn}() lacks ${missing.map((a) => `"${a}"`).join(', ')}`);
+      else if (hits.length) fail(`${file}: ${fn}() ${hits.join('; ')}`);
+      else ok(`${file} ${fn}() keeps its anchors, ${forbids.includes(formRead) ? 'reads no form field' : 'names no origin'}`);
+    }
   }
 }
 
@@ -209,14 +223,18 @@ function bodyOf(src, fn) {
 {
   const { STR } = await import('../i18n.js');
   const names = new Set();
-  for (const m of htmlNoComments.matchAll(/\bdata-i18n(?:-aria)?="([^"]+)"/g)) names.add(m[1]);
-  for (const m of read('app.js').matchAll(/\bt\(\)\.([A-Za-z_]\w*)/g)) names.add(m[1]);
+  for (const [page, entry] of Object.entries(PAGES)) {
+    for (const m of stripComments(page).matchAll(/\bdata-i18n(?:-aria)?="([^"]+)"/g)) names.add(m[1]);
+    for (const m of read(entry).matchAll(/\bt\(\)\.([A-Za-z_]\w*)/g)) names.add(m[1]);
+  }
+  // Warning keys the parsers emit are shown through t()[key] and must exist too.
+  for (const m of read('parse.js').matchAll(/'(imp_warn_\w+)'/g)) names.add(m[1]);
   if (names.size === 0) {
-    fail('index.html and app.js name no i18n key at all -- the gate has nothing to check');
+    fail('the pages name no i18n key at all -- the gate has nothing to check');
   } else {
     const missing = [...names].filter((k) => !Object.hasOwn(STR.en, k));
-    if (missing.length) fail(`i18n keys named by the page but missing from STR.en: ${missing.join(', ')}`);
-    else ok(`all ${names.size} i18n keys named by index.html and app.js exist`);
+    if (missing.length) fail(`i18n keys named by the pages but missing from STR.en: ${missing.join(', ')}`);
+    else ok(`all ${names.size} i18n keys named by the pages, their modules and parse.js exist`);
   }
 }
 

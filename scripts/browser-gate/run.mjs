@@ -170,6 +170,36 @@ try {
     }
   }
 
+  // import.html: a pasted list becomes a pick list, "Open in calqrii" lands in the view with exactly those events.
+  phase = 'import';
+  const IMPORT_TEXT = ['Termine', 'Sa, 05.10.2030, 19:00 Uhr', 'Grillfest am Vereinsheim', 'Ort: Vereinsheim, Am Sportplatz 3',
+    '17.–18.10.2030', 'Hüttenwochenende', 'Mi 21.10.2030 18:30–20:00 Vorstandssitzung', 'Fr 12.09.2020 Sommerfest (vorbei)'].join('\n');
+  const IMPORT_TITLES = ['Grillfest am Vereinsheim', 'Hüttenwochenende', 'Vorstandssitzung']; // the 2020 event is past: hidden and not selected
+  // Boot check: applyLang() sets the placeholder, so an empty one means a module load was reset by the dev server.
+  for (let attempt = 1; ; attempt++) {
+    if (attempt === 1) await t.send('Page.navigate', { url: BASE + 'import.html' });
+    else await t.send('Page.reload', { ignoreCache: true });
+    if (await waitFor(`!!document.querySelector('#imp-text') && document.querySelector('#imp-text').placeholder !== ''`)) break;
+    if (attempt === 5) throw new Error('import page did not boot');
+    log('import page not booted, retry', attempt);
+  }
+  await t.evaluate(`(() => { const ta = document.querySelector('#imp-text'); ta.value = ${JSON.stringify(IMPORT_TEXT)}; ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  if (!await waitFor(`document.querySelectorAll('#imp-list > li').length === ${IMPORT_TITLES.length} && (document.querySelector('#imp-open').getAttribute('href') || '').startsWith(${JSON.stringify(BASE + '#')})`)) {
+    fail(`import: ${await t.evaluate(`document.querySelectorAll('#imp-list > li').length`)} cards, link ${await t.evaluate(`document.querySelector('#imp-open').getAttribute('href')`)}`);
+  } else {
+    const cards = await t.evaluate(`[...document.querySelectorAll('.imp-title')].map((e) => e.textContent)`);
+    if (JSON.stringify(cards) !== JSON.stringify(IMPORT_TITLES)) fail(`import cards: ${JSON.stringify(cards)}`);
+    else ok(`import: ${cards.length} upcoming events listed from the pasted text, the past one hidden`);
+    await t.evaluate(`document.querySelector('#imp-open').click(), true`);
+    if (!await waitFor(`document.querySelectorAll('#view-list > li').length === ${IMPORT_TITLES.length} && !document.querySelector('#view-section').hidden`, 6000)) fail('import: "Open in calqrii" did not reach the view');
+    else {
+      const titles = await t.evaluate(`[...document.querySelectorAll('.view-title')].map((e) => e.textContent)`);
+      const where = await t.evaluate(`document.querySelector('.view-where .where-text').textContent`);
+      if (JSON.stringify(titles) !== JSON.stringify(IMPORT_TITLES) || where !== 'Vereinsheim, Am Sportplatz 3') fail(`import view: ${JSON.stringify(titles)}, where "${where}"`);
+      else ok('import: the link opens the view with exactly the chosen events (titles and location intact)');
+    }
+  }
+
   phase = 'hygiene';
   const offOrigin = requests.filter((r) => !r.url.startsWith(BASE) && !r.url.startsWith('data:'));
   if (offOrigin.length) fail(`requests beyond the dev server: ${offOrigin.map((r) => r.url).join(', ')}`);

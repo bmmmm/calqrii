@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Like index.html, but this page never talks to the network at all: connect-src 'none' (the smoke gate pins it per page). -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Import a calendar file (.ics) or the copied text of an event list, pick the events, and open them in calqrii as QR codes and share links. Nothing is stored or sent.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+<title>calqrii import — events from a calendar file or a copied list</title>
+</head>
+<body>
+<header>
+  <h1><a href="./" class="brand">calqrii</a> <span class="brand-sub" data-i18n="imp_brand">import</span></h1>
+  <p data-i18n="imp_tagline">Drop in a calendar file (.ics) or paste the copied text of an event list — a club's "Termine" page, a newsletter, a timetable. Pick the events you want and open them in calqrii: QR codes, .ics downloads and a share link, all in your browser.</p>
+  <nav id="lang-nav" aria-label="Language">
+    <button type="button" id="lang-en" class="lang" aria-pressed="true">EN</button>
+    <button type="button" id="lang-de" class="lang" aria-pressed="false">DE</button>
+  </nav>
+</header>
+
+<main>
+  <section id="imp-source" aria-labelledby="imp-source-head">
+    <h2 id="imp-source-head" data-i18n="imp_source_head">Source</h2>
+    <div class="actions imp-pick">
+      <!-- The input is inside the label: a tap anywhere on the "button" opens the system file picker; the file never leaves the page. -->
+      <label class="button primary imp-file"><input type="file" id="imp-file" accept=".ics,text/calendar" hidden> <span data-i18n="imp_pick">Choose .ics file</span></label>
+      <button type="button" id="imp-clear" data-i18n="imp_clear" hidden>Clear</button>
+    </div>
+    <label for="imp-text" data-i18n="imp_paste_label">Or paste here: a calendar file, or the copied text of an event list</label>
+    <textarea id="imp-text" rows="7" spellcheck="false" autocapitalize="off"></textarea>
+    <p class="note" data-i18n="imp_text_hint">Tip: on the web page select the whole event list, copy it, and paste it here. One line per event — date, time, title — works best; lines without a date are read as the title, "Ort:"/"Location:" or the description of the event above.</p>
+    <p id="imp-status" class="note" role="status"></p>
+  </section>
+
+  <section id="imp-result" aria-labelledby="imp-result-head" hidden>
+    <h2 id="imp-result-head" data-i18n="imp_result_head">Events</h2>
+    <div class="imp-tools">
+      <button type="button" id="imp-all" class="link" data-i18n="imp_select_all">Select all</button>
+      <button type="button" id="imp-none" class="link" data-i18n="imp_select_none">Deselect all</button>
+      <label class="check" id="imp-past-row" hidden><input type="checkbox" id="imp-show-past"> <span id="imp-show-past-label"></span></label>
+    </div>
+    <ol id="imp-list"></ol>
+  </section>
+</main>
+
+<!-- Sticky on a phone: the count and the one action stay in reach while scrolling the list. -->
+<div id="imp-bar" hidden>
+  <p id="imp-count" class="imp-count"></p>
+  <div class="actions">
+    <a id="imp-open" class="button primary" data-i18n="imp_open" aria-disabled="true">Open in calqrii</a>
+    <button type="button" id="imp-copy" data-i18n="copy_link" disabled>Copy link</button>
+  </div>
+  <p id="imp-link-note" class="note" hidden></p>
+</div>
+
+<footer>
+  <p data-i18n="imp_privacy"></p>
+  <p><a href="./" data-i18n="home">Start page</a> · <a href="https://github.com/bmmmm/calqrii" data-i18n="source">Source (GPL-3.0-or-later)</a></p>
+</footer>
+
+<template id="tpl-imp-card">
+  <li>
+    <label class="imp-card">
+      <input type="checkbox" class="imp-check">
+      <span class="imp-body">
+        <span class="imp-title"></span>
+        <span class="imp-when"></span>
+        <span class="imp-rec"></span>
+        <span class="imp-where"></span>
+        <span class="imp-desc"></span>
+        <span class="imp-warn"></span>
+        <span class="imp-err"></span>
+      </span>
+    </label>
+  </li>
+</template>
+
+<script type="module" src="import.js"></script>
+</body>
+</html>

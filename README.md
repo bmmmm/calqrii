@@ -39,6 +39,31 @@ experimental: scanner libraries such as ZXing read only the first event from
 such a code, and phone cameras are untested. As a link it carries every event
 (up to the 2 953-byte limit, about eight typical events).
 
+## Import (extra)
+
+`import.html` turns an existing event list into calqrii links without typing:
+choose a calendar file (`.ics` — what most club sites, Google Calendar,
+Outlook and Nextcloud export) or paste the copied text of any event list (a
+"Termine" page, a newsletter). Every line with a date becomes an event
+(`05.10.2026 19:00 Grillfest`, `17.–18.10.2026 Hüttenwochenende`,
+`12. Oktober 2026, 18.30 – 21 Uhr: Vortrag`, `October 3, 2026 7pm Party`);
+lines without a date are the title, the location (`Ort:`/`Location:`) or
+the description of the event above them. Tick the events you want — upcoming
+ones are preselected, past ones hidden behind a toggle — and **Open in
+calqrii** lands in the read-only view of the main page with QR codes, `.ics`
+downloads, "Edit these events" and the share link; **Copy link** copies the
+same link. Imported series are written as floating local time, like every
+series here: a rule the editor cannot express (ordinal weekdays,
+`BYMONTHDAY`, a start that moves to another day in your zone, …) is dropped
+with a note rather than approximated; a series given in another zone or in
+UTC keeps its rule but gets a note (after a daylight-saving change its times
+can be an hour off); skipped, added or moved dates (`EXDATE`, `RDATE`,
+`RECURRENCE-ID`) are not imported, with a note on the series. Windows zone
+names (`W. Europe Standard Time`) are unknown to browsers: the time is taken
+as written, with a note. The page never uses the network (`connect-src
+'none'`): the file and the text stay in the browser, the link carries the
+chosen events in its `#fragment` — and, once opened, in the browser history.
+
 ## Privacy
 
 Nothing is stored: no cookies, no local storage, no server of its own.
