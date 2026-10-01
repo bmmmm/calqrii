@@ -42,6 +42,7 @@ function applyLang(code) {
     const s = t()[el.dataset.i18n];
     if (typeof s === 'string') el.textContent = s;
   }
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t()[el.dataset.i18nAria]);
   $('lang-en').setAttribute('aria-pressed', String(lang === 'en'));
   $('lang-de').setAttribute('aria-pressed', String(lang === 'de'));
   $('lang-nav').setAttribute('aria-label', t().language);

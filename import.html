@@ -16,7 +16,7 @@
 <body>
 <header>
   <h1><a href="./" class="brand">calqrii</a> <span class="brand-sub" data-i18n="imp_brand">import</span></h1>
-  <p data-i18n="imp_tagline">Drop in a calendar file (.ics) or paste the copied text of an event list — a club's "Termine" page, a newsletter, a timetable. Pick the events you want and open them in calqrii: QR codes, .ics downloads and a share link, all in your browser.</p>
+  <p data-i18n="imp_tagline">Calendar file or copied event list → pick the events → open them in calqrii.</p>
   <nav id="lang-nav" aria-label="Language">
     <button type="button" id="lang-en" class="lang" aria-pressed="true">EN</button>
     <button type="button" id="lang-de" class="lang" aria-pressed="false">DE</button>
@@ -31,9 +31,11 @@
       <label class="button primary imp-file"><input type="file" id="imp-file" accept=".ics,text/calendar" hidden> <span data-i18n="imp_pick">Choose .ics file</span></label>
       <button type="button" id="imp-clear" data-i18n="imp_clear" hidden>Clear</button>
     </div>
-    <label for="imp-text" data-i18n="imp_paste_label">Or paste here: a calendar file, or the copied text of an event list</label>
-    <textarea id="imp-text" rows="7" spellcheck="false" autocapitalize="off"></textarea>
-    <p class="note" data-i18n="imp_text_hint">Tip: on the web page select the whole event list, copy it, and paste it here. One line per event — date, time, title — works best; lines without a date are read as the title, "Ort:"/"Location:" or the description of the event above.</p>
+    <div class="label-row">
+      <label for="imp-text" data-i18n="imp_paste_label">Or paste here: a calendar file, or the copied text of an event list</label>
+      <details class="info"><summary data-i18n-aria="more_info" aria-label="More information"></summary><p class="note" id="imp-text-hint" data-i18n="imp_text_hint">Tip: on the web page select the whole event list, copy it, and paste it here.</p></details>
+    </div>
+    <textarea id="imp-text" rows="7" spellcheck="false" autocapitalize="off" aria-describedby="imp-text-hint"></textarea>
     <p id="imp-status" class="note" role="status"></p>
   </section>
 
@@ -59,7 +61,7 @@
 </div>
 
 <footer>
-  <p data-i18n="imp_privacy"></p>
+  <details class="fold"><summary data-i18n="privacy_head">Privacy</summary><p data-i18n="imp_privacy"></p></details>
   <p><a href="./" data-i18n="home">Start page</a> · <a href="https://github.com/bmmmm/calqrii" data-i18n="source">Source (GPL-3.0-or-later)</a></p>
 </footer>
 

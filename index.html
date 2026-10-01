@@ -17,7 +17,7 @@
 <body>
 <header>
   <h1>calqrii</h1>
-  <p data-i18n="tagline">Calendar events as QR codes — generated in your browser; nothing leaves it unless you use the optional OpenStreetMap address search. Scan with a phone camera to add the event to its calendar.</p>
+  <p data-i18n="tagline">Calendar events as QR codes — made in your browser, nothing stored.</p>
   <nav id="lang-nav" aria-label="Language">
     <button type="button" id="lang-en" class="lang" aria-pressed="true">EN</button>
     <button type="button" id="lang-de" class="lang" aria-pressed="false">DE</button>
@@ -31,7 +31,6 @@
   <section id="view-section" aria-labelledby="view-head" hidden>
     <h2 id="view-head" class="view-intro" data-i18n="view_intro">Shared via calqrii</h2>
     <ol id="view-list"></ol>
-    <p class="note" data-i18n="view_add_note"></p>
     <!-- "Start page" is a plain link to the page itself: no script touches the address bar. -->
     <div class="actions">
       <button type="button" id="view-add-all" class="primary" data-i18n="view_add_all" hidden>Add all (.ics)</button>
@@ -39,6 +38,7 @@
       <button type="button" id="view-new" data-i18n="new_event">New event</button>
       <a id="view-home" class="button" href="./" data-i18n="home">Start page</a>
     </div>
+    <details class="info info-line"><summary data-i18n="view_add_help">Adding does not work?</summary><p class="note" data-i18n="view_add_note"></p></details>
   </section>
 
   <section id="calendar-section" aria-labelledby="calendar-head">
@@ -153,7 +153,7 @@
         <label class="check"><input type="radio" name="f-ends" value="until"> <span data-i18n="end_until">on</span> <input type="date" id="f-until" name="until" data-i18n-aria="f_until_aria" data-field="until" aria-describedby="err-ends"></label>
         <p class="field-error" id="err-ends" hidden></p>
       </fieldset>
-      <p class="note" id="rep-note" data-i18n="rep_floating_note"></p>
+      <details class="info info-line" id="rep-note"><summary data-i18n="rep_tz_help">Daylight saving time</summary><p class="note" data-i18n="rep_floating_note"></p></details>
       <p class="note" id="rep-day-note" data-i18n="rep_day_note" hidden></p>
     </div>
 
@@ -169,17 +169,25 @@
       <ul id="geo-list" data-i18n-aria="geo_results_label"></ul>
       <p class="note"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" data-i18n="geo_attrib">Search data © OpenStreetMap contributors (ODbL)</a></p>
     </div>
+    <!-- Rarely needed fields, folded; app.js opens the fold when one of them is filled or has an error. -->
+    <details id="more-fields" class="fold">
+    <summary data-i18n="more_fields">Map position, description, link</summary>
+    <div class="fold-body">
     <!-- Plain text on purpose: inputmode="decimal" has no minus, comma or letters on iOS, so links and "lat, lon" could not be typed. -->
-    <label for="f-geo" data-i18n="f_geo">Map position</label>
+    <div class="label-row">
+      <label for="f-geo" data-i18n="f_geo">Map position</label>
+      <details class="info"><summary data-i18n-aria="more_info" aria-label="More information"></summary><p class="note" id="f-geo-hint" data-i18n="f_geo_hint">Paste an OpenStreetMap link, a geo: URI or "lat, lon".</p></details>
+    </div>
     <input id="f-geo" name="geo" spellcheck="false" autocapitalize="off" data-field="geo" aria-describedby="err-geo f-geo-hint">
     <p class="field-error" id="err-geo" hidden></p>
-    <p class="note" id="f-geo-hint" data-i18n="f_geo_hint">Paste an OpenStreetMap link, a geo: URI or "lat, lon".</p>
     <label for="f-desc" data-i18n="f_description">Description</label>
     <textarea id="f-desc" name="description" rows="3" data-field="description" aria-describedby="err-description"></textarea>
     <p class="field-error" id="err-description" hidden></p>
     <label for="f-url" data-i18n="f_url">Link</label>
     <input id="f-url" name="url" type="url" inputmode="url" spellcheck="false" data-field="url" aria-describedby="err-url">
     <p class="field-error" id="err-url" hidden></p>
+    </div>
+    </details>
 
     <!-- Live size of what the QR code would carry (app.js renderPayloadMeter); the real limit, not a character count. -->
     <p id="payload-meter" class="note" hidden></p>
@@ -194,9 +202,11 @@
     <h2 id="events-head" data-i18n="events_head">Events</h2>
     <fieldset id="payload">
       <legend data-i18n="payload_legend">QR contains</legend>
-      <label class="check"><input type="radio" name="payload" value="ics" checked> <span data-i18n="payload_ics">Calendar data (works offline)</span></label>
-      <label class="check"><input type="radio" name="payload" value="link" aria-describedby="payload-link-note"> <span data-i18n="payload_link">Link to this page</span></label>
-      <p id="payload-link-note" class="note" data-i18n="payload_link_note"></p>
+      <div class="segmented">
+        <label><input type="radio" name="payload" value="ics" checked> <span data-i18n="payload_ics">Calendar data (works offline)</span></label>
+        <label><input type="radio" name="payload" value="link" aria-describedby="payload-link-note"> <span data-i18n="payload_link">Link to this page</span></label>
+      </div>
+      <details class="info info-line"><summary data-i18n="payload_help">Which one?</summary><p class="note"><span data-i18n="payload_ics_note">Calendar data: the code itself carries the event, no internet needed — but not every camera app offers to import it.</span> <span id="payload-link-note" data-i18n="payload_link_note"></span></p></details>
     </fieldset>
     <p id="empty-list" class="note" data-i18n="empty_list">No events yet.</p>
     <ol id="event-list"></ol>
@@ -211,8 +221,8 @@
       <button type="button" id="new-event" data-i18n="new_event" hidden>New event</button>
       <a id="home-link" class="button" href="./" data-i18n="home" hidden>Start page</a>
     </div>
-    <p id="link-info" class="note"></p>
-    <p id="tz-info" class="note"></p>
+    <p id="link-warn" class="note warn" hidden></p>
+    <details class="info info-line"><summary data-i18n="link_help">About the link</summary><p id="link-info" class="note"></p><p id="tz-info" class="note"></p></details>
   </section>
 </main>
 
@@ -227,7 +237,7 @@
 </section>
 
 <footer>
-  <p data-i18n="privacy"></p>
+  <details class="fold"><summary data-i18n="privacy_head">Privacy</summary><p data-i18n="privacy"></p></details>
   <p><a href="import.html" data-i18n="imp_link">Import a calendar file or a copied event list (extra)</a></p>
   <p><a href="https://github.com/bmmmm/calqrii" data-i18n="source">Source (GPL-3.0-or-later)</a></p>
 </footer>
@@ -250,17 +260,23 @@
 </template>
 <template id="tpl-qr">
   <div class="qr"></div>
-  <p class="qr-meta"></p>
   <p class="qr-warn note warn" hidden></p>
   <p class="qr-error" hidden></p>
   <div class="qr-actions">
-    <button type="button" data-act="svg"></button>
-    <button type="button" data-act="png"></button>
     <button type="button" data-act="ics"></button>
-    <button type="button" data-act="print"></button>
     <button type="button" data-act="copy" data-i18n="copy_qr"></button>
   </div>
-  <details><summary class="show-text"></summary><pre class="qr-text"></pre></details>
+  <!-- Image downloads, print and the technical details: folded; the code and the .ics stay in front. -->
+  <details class="fold qr-more"><summary data-i18n="qr_more">More</summary>
+    <div class="qr-actions">
+      <button type="button" data-act="svg"></button>
+      <button type="button" data-act="png"></button>
+      <button type="button" data-act="print"></button>
+    </div>
+    <p class="qr-meta"></p>
+    <p class="show-text"></p>
+    <pre class="qr-text"></pre>
+  </details>
 </template>
 <!-- The link carries no href attribute: an empty href would read as a missing asset to the smoke gate. -->
 <template id="tpl-view-card">

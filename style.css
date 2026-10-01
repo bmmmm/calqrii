@@ -126,6 +126,11 @@ input, select, textarea {
 input:disabled { opacity: 0.5; }
 .row { display: grid; grid-template-columns: 6rem 1fr; gap: 8px; align-items: center; }
 .row label { margin-top: 0; }
+/* Very narrow phones: the label goes above its fields. */
+@media (max-width: 22rem) {
+  .row { grid-template-columns: 1fr; gap: 4px; }
+  .row > .field-error { grid-column: 1; }
+}
 .fields { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fields input[type="date"] { flex: 1 1 9rem; }
 .fields input[type="time"] { flex: 0 1 7rem; }
@@ -207,18 +212,86 @@ button:disabled { cursor: default; opacity: 0.6; }
 
 /* --- events --- */
 #event-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
-.event { padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.event { padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
 .ev-when, .ev-rec, .ev-where { margin: 0; font-size: 0.95rem; }
 .ev-rec, .ev-where { color: var(--muted); }
 .qr-panel { margin-top: 8px; }
 /* The code stays black on white in dark mode: scanners need the contrast. */
 .qr { background: #fff; max-width: 22rem; padding: 0; border-radius: 4px; }
 .qr svg { display: block; width: 100%; height: auto; }
-.qr-meta { color: var(--muted); font-size: 0.8rem; margin: 6px 0 0; }
+.qr-meta { color: var(--muted); font-size: 0.8rem; margin: 8px 0 0; }
 .qr-error { color: var(--err); background: var(--err-bg); padding: 6px 10px; border-radius: 4px; }
-.qr-actions, .ev-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-details { margin-top: 8px; font-size: 0.85rem; }
-summary { cursor: pointer; color: var(--muted); }
+.qr-actions, .ev-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; max-width: 22rem; }
+/* Touch-sized: the buttons share the row and wrap on a phone. */
+.qr-actions button, .ev-actions button { flex: 1 1 0; min-height: 44px; padding-inline: 8px; }
+.show-text { margin: 8px 0 0; font-size: 0.8rem; color: var(--muted); }
+
+/* --- folds and info toggles: native <details>, no script, a tap opens and closes them --- */
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+/* Fold: a full-width row with a chevron that turns when open. */
+details.fold { margin-top: 8px; }
+details.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+details.fold > summary::after {
+  content: "";
+  width: 0.45em;
+  height: 0.45em;
+  margin-left: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-25%) rotate(45deg);
+  transition: transform 0.15s;
+}
+details.fold[open] > summary::after { transform: translateY(15%) rotate(-135deg); }
+#more-fields { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 12px; }
+#more-fields > summary { justify-content: space-between; }
+.fold-body { display: grid; gap: 4px; padding-bottom: 12px; }
+.qr-more { max-width: 22rem; }
+.qr-more > summary { font-size: 0.9rem; }
+/* Info: a round "i"; the text unfolds below it. Inline after a label, or alone as an "i + words" line. */
+details.info { display: inline; font-size: 0.9rem; }
+details.info > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -12px 0;
+  vertical-align: middle;
+  color: var(--accent);
+}
+details.info > summary::before {
+  content: "i" / ""; /* decoration: not part of the summary's accessible name */
+  display: inline-grid;
+  place-items: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font: italic 700 0.75rem/1 Georgia, "Times New Roman", serif;
+}
+details.info[open] > summary::before { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+details.info > .note {
+  display: block;
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--accent-weak);
+  color: var(--fg);
+}
+details.info-line { display: block; }
+details.info-line > summary { justify-content: flex-start; margin: 0; }
+details.info-line > .note + .note { margin-top: -4px; }
+.label-row { margin-top: 8px; font-size: 0.9rem; }
+.label-row label { margin-top: 0; }
 pre {
   margin: 8px 0 0;
   padding: 8px;
@@ -230,7 +303,28 @@ pre {
 }
 #combined-panel { margin-top: 8px; }
 #payload { margin: 0 0 8px; }
-#payload .note { margin: 0 0 0 24px; }
+/* Segmented control: the radio stays in the tree (focusable, announced), the span is the visible half. */
+.segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented label { position: relative; margin: 0; display: flex; }
+.segmented label + label { border-left: 1px solid var(--border); }
+.segmented input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.segmented span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  cursor: pointer;
+}
+.segmented input:checked + span { background: var(--accent); color: var(--bg); }
+.segmented input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -4px; }
+/* The checked half is accent-filled: its ring takes the background colour to stay visible. */
+.segmented input:checked:focus-visible + span { outline-color: var(--bg); }
+@media (forced-colors: active) { .segmented input:checked + span { outline: 3px solid; outline-offset: -3px; } }
 pre.qr-text.link { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* --- view (an opened link) --- */

@@ -158,6 +158,7 @@ function fillEditor(ev) {
   els.desc.value = ev.description;
   els.url.value = ev.url;
   els.geo.value = ev.geo;
+  els.more.open = Boolean(ev.geo || ev.description || ev.url);
   syncOsmSearch();
   state.geoAbort?.abort(); // a reply for the previous form must not land under this one
   clearGeoResults();
@@ -179,6 +180,7 @@ function resetEditor() {
   els.duration.value = String(DEFAULT_DURATION);
   els.interval.value = '1';
   els.count.value = '10';
+  els.more.open = false;
   syncOsmSearch();
   state.geoAbort?.abort();
   clearGeoResults();
@@ -238,6 +240,7 @@ function showGeoResults(results) {
 function chooseGeo(r) {
   els.location.value = r.label;
   els.geo.value = r.geo;
+  els.more.open = true; // the position just set lives in the folded fields
   clearGeoResults();
   syncOsmSearch();
   refreshDraftFeedback(); // set by script: no input event fires
@@ -303,6 +306,8 @@ function renderFieldErrors(keys) {
     if (!slot.textContent.includes(text)) slot.textContent = slot.textContent ? `${slot.textContent} ${text}` : text;
     slot.hidden = false;
   }
+  // A folded field still counts as shown (isShown): unfold it so its message is seen.
+  if (els.more.querySelector('[aria-invalid="true"]')) els.more.open = true;
   return { first: els.form.querySelector('[data-field][aria-invalid="true"]'), rest };
 }
 
@@ -712,6 +717,7 @@ function renderQrPanel(panel, { text, ics, title, stem, kind = 'ics', tooBig, ev
   node.querySelector('[data-act="ics"]').textContent = t().dl_ics;
   node.querySelector('[data-act="print"]').textContent = t().print_qr;
   node.querySelector('[data-act="copy"]').textContent = t().copy_qr;
+  node.querySelector('.qr-more > summary').textContent = t().qr_more;
   node.querySelector('.show-text').textContent = kind === 'link' ? t().show_link : t().show_ics;
   const pre = node.querySelector('pre.qr-text');
   pre.textContent = text;
@@ -819,9 +825,10 @@ function renderShareInfo() {
   els.copyLink.disabled = !any || tooLong;
   els.newEvent.hidden = !any; // without events the form is the page; with events it may be far above
   els.homeLink.hidden = !any;
-  els.linkInfo.textContent = tooLong ? t().link_too_long
-    : t().link_note + (any && url.length > LINK_LONG_CHARS ? ' ' + t().link_long : '');
-  els.linkInfo.classList.toggle('warn', tooLong);
+  // Warnings stay in sight; the general note sits behind the info toggle.
+  els.linkWarn.textContent = tooLong ? t().link_too_long : any && url.length > LINK_LONG_CHARS ? t().link_long : '';
+  els.linkWarn.hidden = els.linkWarn.textContent === '';
+  els.linkInfo.textContent = t().link_note;
   els.tzInfo.textContent = t().tz_note(state.tz);
 }
 
@@ -1157,7 +1164,7 @@ async function main() {
     calendarSection: $('calendar-section'), eventsSection: $('events'), viewSection: $('view-section'),
     viewList: $('view-list'), viewAddAll: $('view-add-all'), viewEdit: $('view-edit'), tplViewCard: $('tpl-view-card'),
     printSheet: $('print-sheet'),
-    linkInfo: $('link-info'), tzInfo: $('tz-info'), tplEvent: $('tpl-event'), tplQr: $('tpl-qr'),
+    linkInfo: $('link-info'), linkWarn: $('link-warn'), tzInfo: $('tz-info'), more: $('more-fields'), tplEvent: $('tpl-event'), tplQr: $('tpl-qr'),
   };
   resetEditor();
   applyLang((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en');
