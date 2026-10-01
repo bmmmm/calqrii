@@ -165,6 +165,8 @@
       <button type="button" id="geo-search" data-i18n="geo_search">Search address (OpenStreetMap)</button>
       <a id="osm-search" href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer" data-i18n="osm_search">Search on OpenStreetMap</a>
     </div>
+    <!-- The search's own messages (consent, errors, no result) sit here, where the click happened, not in the banner at the top. -->
+    <div id="geo-status" role="status" hidden></div>
     <div id="geo-results" hidden>
       <ul id="geo-list" data-i18n-aria="geo_results_label"></ul>
       <p class="note"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" data-i18n="geo_attrib">Search data © OpenStreetMap contributors (ODbL)</a></p>

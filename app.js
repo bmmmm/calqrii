@@ -195,17 +195,42 @@ function syncOsmSearch() {
 
 // --- address search: the page's only network action, opt-in per page load
 
+let geoNoteTimer = 0;
+/** The search's messages, under its button: the banner sits at the page top, out of view next to the Location field. */
+function showGeoNote(text, actions = [], { timeoutMs = 0, error = false } = {}) {
+  clearTimeout(geoNoteTimer);
+  const nodes = [document.createTextNode(text)];
+  for (const a of actions) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = a.label;
+    b.addEventListener('click', () => { hideGeoNote(); a.onClick(); });
+    nodes.push(b);
+  }
+  els.geoStatus.replaceChildren(...nodes);
+  els.geoStatus.classList.toggle('error', error);
+  els.geoStatus.hidden = false;
+  if (timeoutMs) geoNoteTimer = setTimeout(hideGeoNote, timeoutMs);
+}
+
+function hideGeoNote() {
+  clearTimeout(geoNoteTimer);
+  els.geoStatus.hidden = true;
+  els.geoStatus.replaceChildren();
+}
+
 function onGeoSearch() {
   const query = els.location.value.trim();
-  if (query === '') { showBanner(t().geo_empty, [], { timeoutMs: UNDO_MS, error: true }); return; }
+  if (query === '') { showGeoNote(t().geo_empty, [], { timeoutMs: UNDO_MS, error: true }); return; }
   if (!state.geoConsent) {
-    showBanner(t().geo_consent, [
+    showGeoNote(t().geo_consent, [
       { label: t().geo_continue, onClick: () => { state.geoConsent = true; onGeoSearch(); } },
       { label: t().cancel, onClick: () => {} },
     ]);
     return;
   }
   if (els.geoSearch.disabled) return;
+  hideGeoNote();
   const key = `${lang}\n${query}`;
   if (geoMemo.has(key)) { showGeoResults(geoMemo.get(key)); return; }
   const started = Date.now();
@@ -214,7 +239,7 @@ function onGeoSearch() {
   els.geoSearch.textContent = t().geo_searching;
   searchNominatim(query, lang, { signal: state.geoAbort.signal })
     .then((results) => { geoMemo.set(key, results); showGeoResults(results); })
-    .catch((e) => { if (e.code !== 'aborted') showBanner(geoErrorText(e), [], { error: true }); })
+    .catch((e) => { if (e.code !== 'aborted') showGeoNote(geoErrorText(e), [], { error: true }); })
     .finally(() => {
       // Re-enabled no sooner than one second after the start: the rate limit.
       const left = Math.max(0, GEO_MIN_GAP_MS - (Date.now() - started));
@@ -223,7 +248,7 @@ function onGeoSearch() {
 }
 
 function showGeoResults(results) {
-  if (results.length === 0) { clearGeoResults(); showBanner(t().geo_none, [], { timeoutMs: UNDO_MS }); return; }
+  if (results.length === 0) { clearGeoResults(); showGeoNote(t().geo_none, [], { timeoutMs: UNDO_MS }); return; }
   const items = results.map((r) => {
     const li = document.createElement('li');
     const b = document.createElement('button');
@@ -250,6 +275,7 @@ function chooseGeo(r) {
 function clearGeoResults() {
   els.geoList.replaceChildren();
   els.geoResults.hidden = true;
+  hideGeoNote();
 }
 
 function geoErrorText(e) {
@@ -1177,7 +1203,7 @@ async function main() {
     byDay: $('f-byday'), count: $('f-count'), until: $('f-until'), repNote: $('rep-note'), repDayNote: $('rep-day-note'),
     location: $('f-location'), desc: $('f-desc'), url: $('f-url'), geo: $('f-geo'), osmSearch: $('osm-search'),
     formError: $('form-error'), meter: $('payload-meter'),
-    geoSearch: $('geo-search'), geoResults: $('geo-results'), geoList: $('geo-list'),
+    geoSearch: $('geo-search'), geoStatus: $('geo-status'), geoResults: $('geo-results'), geoList: $('geo-list'),
     save: $('save'), cancelEdit: $('cancel-edit'), list: $('event-list'), emptyList: $('empty-list'),
     combinedToggle: $('combined-toggle'), combinedPanel: $('combined-panel'), copyLink: $('copy-link'),
     newEvent: $('new-event'), homeLink: $('home-link'), viewNew: $('view-new'),

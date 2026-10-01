@@ -162,6 +162,25 @@ try {
   if (await waitFor(`!document.querySelector('#view-section').hidden === false && document.activeElement && document.activeElement.id === 'f-title'`, 2000)) ok('"New event" from the view shows the form and focuses the title');
   else fail(`"New event" from the view: form hidden=${await t.evaluate(`document.querySelector('form').hidden`)}, focus on ${await t.evaluate(`document.activeElement && (document.activeElement.id || document.activeElement.tagName)`)}`);
 
+  // Address search: its messages appear under its button, in view where the click happened (the banner sits at
+  // the page top, 500–700 px out of view). The consent is declined: the gate allows no request beyond the dev server.
+  phase = 'geo';
+  const geoClick = (loc) => t.evaluate(`(async () => {
+    const f = document.querySelector('#f-location'); f.value = ${JSON.stringify(loc)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+    const btn = document.querySelector('#geo-search'); btn.scrollIntoView({ block: 'center' });
+    await new Promise((r) => setTimeout(r, 100));
+    btn.click();
+    await new Promise((r) => setTimeout(r, 100));
+    const st = document.querySelector('#geo-status'); const b = st.getBoundingClientRect();
+    return { shown: !st.hidden, inView: b.top >= 0 && b.bottom <= innerHeight, buttons: st.querySelectorAll('button').length, banner: !document.querySelector('#banner').hidden };
+  })()`);
+  const empty = await geoClick('');
+  const asked = await geoClick('Marktplatz 1, Bonn');
+  await t.evaluate(`(document.querySelectorAll('#geo-status button')[1].click(), true)`);
+  const declined = await t.evaluate(`document.querySelector('#geo-status').hidden`);
+  if (!empty.shown || !empty.inView || empty.banner || !asked.shown || !asked.inView || asked.buttons !== 2 || asked.banner || !declined) fail(`address search messages: ${JSON.stringify({ empty, asked, declined })}`);
+  else ok('address search: "enter an address" and the consent question appear in view under the button, declining hides it');
+
   await loadView(true);
   phase = 'editor';
   await t.evaluate(`document.querySelector('#view-edit').click(), true`);

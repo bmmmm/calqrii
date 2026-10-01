@@ -177,6 +177,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .field-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 0.9rem; }
+#geo-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; padding: 8px 12px; background: var(--accent-weak); border-radius: 4px; font-size: 0.9rem; }
+#geo-status.error { background: var(--err-bg); color: var(--err); }
+#geo-status button { min-height: 44px; }
 .field-links a, .where-map { color: var(--accent); }
 .where-map { margin-left: 4px; }
 #geo-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 4px; }
