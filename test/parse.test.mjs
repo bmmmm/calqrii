@@ -280,6 +280,15 @@ eq(parseDuration('-PT1H'), null, 'negative unsupported');
   eq(l('05.10.2026 Wanderung, Dauer 3 h').startTime, '', 'a bare "h" is no time unit');
   deq([l('20.–18.10.2026 Rückwärts').date, l('20.–18.10.2026 Rückwärts').endDate], ['2026-10-18', '2026-10-18'], 'a day range running backwards is ignored');
   deq([parseDateLine('28.12. – 02.01.2027 Ferien', '2027-03-01').date, parseDateLine('28.12. – 02.01.2027 Ferien', '2027-03-01').endDate], ['2026-12-28', '2027-01-02'], 'a span over New Year takes the end year minus one for the start');
+  const span = l('26.10.2026 (09:00) – 30.10.2026 (16:00) Feriencamp');
+  deq([span.date, span.startTime, span.endDate, span.endTime, span.title], ['2026-10-26', '09:00', '2026-10-30', '16:00', 'Feriencamp'], 'a span with a time after each date');
+  deq([l('Mo 26.10.2026, um 9 Uhr bis Fr 30.10.2026, 16 Uhr').endDate, l('Mo 26.10.2026, um 9 Uhr bis Fr 30.10.2026, 16 Uhr').endTime], ['2026-10-30', '16:00'], 'the same with "um", "Uhr" and weekdays');
+  eq(l('26.10.2026 09:00 10:00 – 30.10.2026 16:00 X').endDate, '2026-10-26', 'two times after the start date: no span');
+  eq(l('26.10.2026 Camp 09:00 – 30.10.2026 16:00').endDate, '2026-10-26', 'words before the start time: no span');
+  eq(l('26.10.2026 09:00 Treffen – 30.10.2026 16:00').endDate, '2026-10-26', 'words after the start time: no span');
+  eq(l('26.10.2026 (09:00) – 30.10.2026 Camp').endDate, '2026-10-26', 'no time after the end date: no span');
+  eq(l('26.10.2026 (09:00) – 30.10.2026 Camp 16:00').endDate, '2026-10-26', 'words before the end time: no span');
+  eq(l('26.10.2026 18.30 – 30.10.2026 16.00 Uhr Camp').endTime, '16:00', 'dotted times count when the line says "Uhr" anywhere');
   const t0 = performance.now();
   const long = parseText('05.10.2026 Lang ' + ' -'.repeat(30000) + ' Ende', { today: TODAY });
   ok(long.length === 1 && long[0].ev.title.length <= 2000 && performance.now() - t0 < 500, 'a line with 60 000 punctuation characters mid-line is cut (the trim regex is quadratic: 2.5 s at 40 000 uncut)');
@@ -304,11 +313,18 @@ eq(parseDuration('-PT1H'), null, 'negative unsupported');
   deq(strip(items[1].ev), strip(newEvent({ title: 'Hüttenwochenende', allDay: true, date: '2026-10-17', endDate: '2026-10-18' })), 'all-day span');
   deq(strip(items[2].ev), strip(newEvent({ title: 'Vorstandssitzung', date: '2026-10-21', startTime: '18:30', endTime: '20:00' })), 'inline title with time range');
 }
+const before = ['Grillfest', '05.10.2026 19:00', 'Hüttenwochenende', '17.10.2026 – 18.10.2026', 'Vorstandssitzung', '21.10.2026 18:30'].join('\n');
 {
-  const before = ['Grillfest', '05.10.2026 19:00', 'Hüttenwochenende', '17.10.2026 – 18.10.2026', 'Vorstandssitzung', '21.10.2026 18:30'].join('\n');
   const items = parseText(before, { today: TODAY });
   deq(items.map((i) => i.ev.title), ['Grillfest', 'Hüttenwochenende', 'Vorstandssitzung'], 'title-before layout detected');
   deq(items.map((i) => i.ev.description), ['', '', ''], 'the next title is not this description');
+}
+{
+  // ssfbonn.de/de/termine as copied (2026-10-01): a heading, then date line and title line per event.
+  const ssf = ['Termine', '28.09.2026 (19:00 – 21:00)', 'Mitgliederinformationsveranstaltung', '26.10.2026 (09:00) – 30.10.2026 (16:00)', 'Feriencamp im Sportpark Nord', '29.10.2026 (18:00 – 19:30)', 'Datenschutzschulung'].join('\n');
+  deq(parseText(ssf, { today: TODAY }).map((i) => i.ev.title), ['Mitgliederinformationsveranstaltung', 'Feriencamp im Sportpark Nord', 'Datenschutzschulung'], 'a heading above a title-after list does not shift the titles');
+  deq(parseText(['01.10.2026', 'A', '02.10.2026', 'B', '03.10.2026'].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['A', 'B', ''], 'one untitled event either way: the tie keeps the after reading');
+  deq(parseText(['Termine', ...before.split('\n')].join('\n'), { today: TODAY }).map((i) => i.ev.title), ['Grillfest', 'Hüttenwochenende', 'Vorstandssitzung'], 'a heading above a title-before list keeps the before reading');
 }
 deq(parseText('Nur Text ohne ein Datum.\nNoch eine Zeile.', { today: TODAY }), [], 'no date, no events');
 {

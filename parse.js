@@ -369,9 +369,8 @@ function isoOf(tok, year) {
 }
 
 /** Times of a line (dates already blanked): [{ index, end, time }] */
-function findTimes(line) {
+function findTimes(line, dottedOk = UHR_RE.test(line)) {
   const out = [];
-  const dottedOk = UHR_RE.test(line);
   TIME_RE.lastIndex = 0;
   for (const m of line.matchAll(TIME_RE)) {
     if (m[3] !== undefined && !dottedOk) continue;
@@ -388,6 +387,26 @@ function findTimes(line) {
 
 const blank = (s, from, to) => s.slice(0, from) + ' '.repeat(to - from) + s.slice(to);
 const isGap = (s) => s.trim() !== '' && GAP_RE.test(s);
+// What may stand before a time that belongs to the date just before it: "(09:00)", ", 9 Uhr", "um 18:00".
+const TIME_LEAD_RE = /^[\s,(]*(?:(?:um|ab|at|from)\s+)?\(?\s*$/i;
+const TIME_CLOSE_RE = /^\s*\)/;
+
+/**
+ * "26.10.2026 (09:00) – 30.10.2026 (16:00)": one time right after the first
+ * date, then only a separator, then the second date with its own time.
+ * { startTime, endTime, end } (end: where the end time stops), or null.
+ */
+function timedSpan(line, first, second) {
+  const dottedOk = UHR_RE.test(line);
+  const gap = line.slice(first.end, second.index);
+  const t1 = findTimes(gap, dottedOk)[0];
+  if (!t1 || !TIME_LEAD_RE.test(gap.slice(0, t1.index))) return null;
+  if (!isGap(gap.slice(t1.end).replace(TIME_CLOSE_RE, '').replace(WEEKDAY_RE, ' '))) return null; // "… bis Fr 30.10."
+  const after = line.slice(second.end);
+  const t2 = findTimes(after, dottedOk)[0];
+  if (!t2 || !TIME_LEAD_RE.test(after.slice(0, t2.index))) return null;
+  return { startTime: t1.time, endTime: t2.time, end: second.end + t2.end };
+}
 
 /** The date line's own words after dates, times, weekdays and glue are removed. */
 function titleOf(rest) {
@@ -406,7 +425,9 @@ export function parseDateLine(line, today) {
   const second = dates[1];
   let rest = line;
   // "D.M. – D.M.YYYY": a start without a year takes the end's year (the one before it when the span crosses New Year).
-  const rangeToSecond = second && isGap(line.slice(first.end, second.index));
+  const plainRange = second && isGap(line.slice(first.end, second.index));
+  const timed = second && !plainRange ? timedSpan(line, first, second) : null;
+  const rangeToSecond = plainRange || timed !== null;
   let year;
   if (first.year === null && rangeToSecond && second.year !== null) {
     year = second.year;
@@ -435,10 +456,14 @@ export function parseDateLine(line, today) {
   }
   if (!date) return null;
   if (compareDates(endDate, date) < 0) endDate = date;
-  const times = findTimes(rest);
   let startTime = '';
   let endTime = '';
-  if (times.length) {
+  const times = timed ? [] : findTimes(rest);
+  if (timed) {
+    startTime = timed.startTime;
+    endTime = timed.endTime;
+    rest = blank(rest, second.end, timed.end);
+  } else if (times.length) {
     startTime = times[0].time;
     rest = blank(rest, times[0].index, times[0].end);
     const t2 = times[1];
@@ -455,7 +480,7 @@ export function parseDateLine(line, today) {
  * event; its other words are the title. Lines without a date belong to the
  * nearest date line: after it (title when the date line had none, "Ort:" as
  * the location, the rest as description) — or, when no date line carries a
- * title of its own and most are preceded by a text line, the line before it.
+ * title of its own and that reading leaves fewer events untitled, the line before it.
  */
 export function parseText(text, { today }) {
   const lines = text.split(/\r?\n/).map((l) => l.slice(0, MAX_LINE_CHARS).replace(/\s+/g, ' ').trim()).filter((l) => l !== '');
@@ -464,8 +489,11 @@ export function parseText(text, { today }) {
   parsed.forEach((p, i) => { if (p) anchors.push(i); });
   if (anchors.length === 0) return [];
   const untitled = anchors.every((i) => parsed[i].title === '');
-  const precededCount = anchors.filter((i) => i > 0 && !parsed[i - 1]).length;
-  const titleBefore = untitled && precededCount * 2 > anchors.length;
+  // Title line before or after the date line: the reading that leaves fewer events without one. A tie keeps
+  // "after": a heading like "Termine" above an after-layout list would otherwise title the first event and shift the rest.
+  const untitledAfter = anchors.filter((i, k) => (anchors[k + 1] ?? lines.length) === i + 1).length;
+  const untitledBefore = anchors.filter((i) => i === 0 || parsed[i - 1]).length;
+  const titleBefore = untitled && untitledBefore < untitledAfter;
   const items = [];
   anchors.forEach((i, k) => {
     const p = parsed[i];
